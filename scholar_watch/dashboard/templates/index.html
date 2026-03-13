@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Scholar Watch - Researchers{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Tracked Researchers</h1>
+
+{% if researchers %}
+<div class="table-wrapper card">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Affiliation</th>
+                <th>Publications</th>
+                <th>Citations</th>
+                <th>h-index</th>
+                <th>i10-index</th>
+                <th>Last Scraped</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in researchers %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('dashboard.researcher_detail', scholar_id=item.researcher.scholar_id) }}">
+                        {{ item.researcher.name or item.researcher.scholar_id }}
+                    </a>
+                </td>
+                <td>{{ item.researcher.affiliation or '-' }}</td>
+                <td>{{ item.pub_count }}</td>
+                <td>
+                    {{ item.snapshot.total_citations if item.snapshot else '-' }}
+                    {% if item.deltas %}
+                    <span class="delta-indicator {% if item.deltas.citations > 0 %}delta-up{% elif item.deltas.citations < 0 %}delta-down{% else %}delta-unchanged{% endif %}"
+                          title="since {{ item.deltas.since.strftime('%b %d, %Y') }}">
+                        {% if item.deltas.citations > 0 %}
+                            <span class="delta-arrow">&#9650;</span>{{ item.deltas.citations }}
+                        {% elif item.deltas.citations < 0 %}
+                            <span class="delta-arrow">&#9660;</span>{{ item.deltas.citations|abs }}
+                        {% endif %}
+                    </span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ item.snapshot.h_index if item.snapshot else '-' }}
+                    {% if item.deltas and item.deltas.h_index != 0 %}
+                    <span class="delta-indicator {% if item.deltas.h_index > 0 %}delta-up{% else %}delta-down{% endif %}">
+                        {% if item.deltas.h_index > 0 %}
+                            <span class="delta-arrow">&#9650;</span>{{ item.deltas.h_index }}
+                        {% else %}
+                            <span class="delta-arrow">&#9660;</span>{{ item.deltas.h_index|abs }}
+                        {% endif %}
+                    </span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ item.snapshot.i10_index if item.snapshot else '-' }}
+                    {% if item.deltas and item.deltas.i10_index != 0 %}
+                    <span class="delta-indicator {% if item.deltas.i10_index > 0 %}delta-up{% else %}delta-down{% endif %}">
+                        {% if item.deltas.i10_index > 0 %}
+                            <span class="delta-arrow">&#9650;</span>{{ item.deltas.i10_index }}
+                        {% else %}
+                            <span class="delta-arrow">&#9660;</span>{{ item.deltas.i10_index|abs }}
+                        {% endif %}
+                    </span>
+                    {% endif %}
+                </td>
+                <td>{{ item.researcher.last_scraped_at.strftime('%Y-%m-%d %H:%M') if item.researcher.last_scraped_at else 'Never' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if researchers[0].deltas %}
+    <p class="delta-since-label">Changes since {{ researchers[0].deltas.since.strftime('%b %d, %Y') }}</p>
+    {% endif %}
+</div>
+{% else %}
+<div class="card">
+    <p>No researchers tracked yet. Add researchers using the CLI:</p>
+    <pre style="margin-top: 0.5rem; background: var(--gray-100); padding: 0.75rem; border-radius: 4px;">scholar-watch add-researcher SCHOLAR_ID</pre>
+</div>
+{% endif %}
+{% endblock %}

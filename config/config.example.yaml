@@ -1,0 +1,47 @@
+# Scholar Watch Configuration
+# Copy this file to config.yaml and edit as needed.
+
+database:
+  # Path relative to project root, or absolute
+  path: data/scholar_watch.db
+
+scraping:
+  # Delay range (seconds) between Scholar API calls
+  min_delay: 5
+  max_delay: 15
+  # Maximum publications to fetch per researcher
+  max_publications: 500
+  # Proxy configuration (optional)
+  proxy:
+    # Type: none, free, tor, scraperapi, single
+    type: none
+    # For scraperapi:
+    # api_key: ${SCRAPERAPI_KEY}
+    # For single proxy:
+    # http: http://proxy:port
+    # https: https://proxy:port
+
+researchers:
+  # List of Google Scholar IDs to track
+  # Find your Scholar ID in your profile URL:
+  #   https://scholar.google.com/citations?user=SCHOLAR_ID
+  - scholar_id: "dkFXRBEAAAAJ"
+    name: "Example Researcher"
+
+email:
+  enabled: false
+  smtp:
+    host: smtp.gmail.com
+    port: 587
+    use_tls: true
+    username: ${SMTP_USERNAME}
+    password: ${SMTP_PASSWORD}
+  from_address: scholar-watch@example.com
+  to_addresses:
+    - recipient@example.com
+  subject_prefix: "[Scholar Watch]"
+
+dashboard:
+  host: "127.0.0.1"
+  port: 5000
+  debug: false

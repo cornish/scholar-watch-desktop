@@ -1,0 +1,7 @@
+scholarly>=1.7
+SQLAlchemy>=2.0
+Flask>=3.0
+plotly>=5.18
+kaleido>=0.2
+PyYAML>=6.0
+Jinja2>=3.1
