@@ -2,19 +2,35 @@
 
 import argparse
 import logging
+import os
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from .config import load_config
 from .database import get_session, init_db, reset_engine
 
 
-def setup_logging(verbose: bool = False) -> None:
+def setup_logging(verbose: bool = False, log_dir: str | None = None) -> None:
     level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+    fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+    # File logging: defaults to <project>/logs/scholar_watch.log
+    if log_dir is None:
+        log_dir = os.path.join(Path(__file__).resolve().parent.parent, "logs")
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        os.path.join(log_dir, "scholar_watch.log"),
+        maxBytes=5 * 1024 * 1024,  # 5 MB
+        backupCount=5,
     )
+    file_handler.setLevel(logging.DEBUG)
+    handlers.append(file_handler)
+
+    logging.basicConfig(level=level, format=fmt, datefmt=datefmt, handlers=handlers)
 
 
 def cmd_init_db(args: argparse.Namespace) -> None:
