@@ -1,9 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}Scholar Watch - Researchers{% endblock %}
+{% block title %}Scholar Watch - My Scholars{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Tracked Researchers</h1>
+<h1 class="page-title">My Scholars</h1>
+
+<div class="card">
+    <h2 class="card-title">Add a Scholar</h2>
+    <form method="POST" action="{{ url_for('dashboard.add_scholar') }}" class="add-scholar-form">
+        <div class="form-group">
+            <label for="scholar_id">Google Scholar ID or Profile URL</label>
+            <input type="text" id="scholar_id" name="scholar_id" required
+                   placeholder="e.g. g9uuZu6YAAAAJ or https://scholar.google.com/citations?user=...">
+        </div>
+        <button type="submit" class="btn btn-primary">Add</button>
+    </form>
+</div>
 
 {% if researchers %}
 <div class="table-wrapper card">
@@ -17,6 +29,7 @@
                 <th>h-index</th>
                 <th>i10-index</th>
                 <th>Last Scraped</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -66,7 +79,19 @@
                     </span>
                     {% endif %}
                 </td>
-                <td>{{ item.researcher.last_scraped_at.strftime('%Y-%m-%d %H:%M') if item.researcher.last_scraped_at else 'Never' }}</td>
+                <td>
+                    {% if item.researcher.last_scraped_at %}
+                    {{ item.researcher.last_scraped_at.strftime('%Y-%m-%d %H:%M') }}
+                    {% else %}
+                    <span class="badge badge-pending">Awaiting first scrape</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('dashboard.scholar_settings', researcher_id=item.researcher.id) }}" class="btn btn-ghost" title="Settings">&#9881;</a>
+                    <form method="POST" action="{{ url_for('dashboard.remove_scholar', researcher_id=item.researcher.id) }}" style="display:inline" onsubmit="return confirm('Remove this scholar from your watchlist?')">
+                        <button type="submit" class="btn btn-ghost" title="Remove">&times;</button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -77,8 +102,7 @@
 </div>
 {% else %}
 <div class="card">
-    <p>No researchers tracked yet. Add researchers using the CLI:</p>
-    <pre style="margin-top: 0.5rem; background: var(--gray-100); padding: 0.75rem; border-radius: 4px;">scholar-watch add-researcher SCHOLAR_ID</pre>
+    <p>No scholars in your watchlist yet. Use the form above to add a Google Scholar ID to start tracking.</p>
 </div>
 {% endif %}
 {% endblock %}

@@ -20,9 +20,12 @@ env/
 
 # Project-specific
 config/config.yaml
-data/*.db
-data/*.sqlite
+data/
 logs/
+.env
+
+# Claude
+CLAUDE.md
 
 # OS
 .DS_Store

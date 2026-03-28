@@ -17,6 +17,7 @@ from .models import (
     ResearcherSnapshot,
     ScrapeRun,
 )
+from .notifications import NotificationGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,13 @@ class ScholarScraper:
             "Scrape run %d: %s (%d researchers, %d publications)",
             run.id, run.status, run.researchers_scraped, run.publications_found,
         )
+
+        if run.status == "completed":
+            try:
+                NotificationGenerator(self.session).generate_for_scrape_run(run)
+            except Exception as e:
+                logger.error("Notification generation failed: %s", e)
+
         return run
 
     def scrape_one(self, scholar_id: str) -> ScrapeRun:

@@ -1,0 +1,20 @@
+[Unit]
+Description=Scholar Watch Web Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=cornish
+Group=cornish
+WorkingDirectory=/home/cornish/scholar-watch
+EnvironmentFile=/home/cornish/scholar-watch/.env
+ExecStart=/home/cornish/scholar-watch/.venv/bin/gunicorn \
+    --bind 127.0.0.1:9744 \
+    --workers 2 \
+    --timeout 120 \
+    "scholar_watch.dashboard:create_app()"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

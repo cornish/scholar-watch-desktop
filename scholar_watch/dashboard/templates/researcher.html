@@ -17,6 +17,24 @@
 </div>
 {% endif %}
 
+{% if not researcher.last_scraped_at %}
+<div class="banner banner-warning">
+    <span class="banner-icon">&#9888;</span>
+    <div>
+        <strong>No data yet.</strong>
+        This scholar has not been scraped. Data will appear after the next scheduled scrape or a manual scrape from the CLI.
+    </div>
+</div>
+{% elif snapshot_count == 1 %}
+<div class="banner banner-info">
+    <span class="banner-icon">&#8505;</span>
+    <div>
+        <strong>Limited data.</strong>
+        Only one scrape has been recorded. Trends, velocity, and change indicators require at least two data points and will become available after the next scrape.
+    </div>
+</div>
+{% endif %}
+
 <!-- Summary Stats (always visible) -->
 {% if metrics %}
 <div class="grid grid-4" style="margin-bottom: 1.5rem;">

@@ -1,6 +1,6 @@
 """Database engine, session factory, and initialization."""
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import AppConfig, load_config
@@ -11,6 +11,13 @@ _engine = None
 _SessionFactory = None
 
 
+def _set_sqlite_wal(dbapi_conn, connection_record):
+    """Enable WAL mode for SQLite to allow concurrent reads."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
+
+
 def get_engine(config: AppConfig | None = None):
     """Get or create the SQLAlchemy engine."""
     global _engine
@@ -18,6 +25,8 @@ def get_engine(config: AppConfig | None = None):
         if config is None:
             config = load_config()
         _engine = create_engine(config.database.uri, echo=False)
+        if config.database.uri.startswith("sqlite"):
+            event.listen(_engine, "connect", _set_sqlite_wal)
     return _engine
 
 

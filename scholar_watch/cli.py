@@ -7,7 +7,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from .config import load_config
+from .config import load_config, load_server_config
 from .database import get_session, init_db, reset_engine
 
 
@@ -174,17 +174,60 @@ def cmd_report(args: argparse.Namespace) -> None:
         session.close()
 
 
+def cmd_create_user(args: argparse.Namespace) -> None:
+    """Create a user account."""
+    import getpass
+    from .auth import hash_password
+    from .models import User
+
+    config = load_config(args.config)
+    init_db(config)
+    session = get_session(config)
+
+    try:
+        email = args.email.strip().lower()
+        existing = session.query(User).filter(User.email == email).first()
+        if existing:
+            print(f"User with email '{email}' already exists.")
+            sys.exit(1)
+
+        if args.password:
+            password = args.password
+        else:
+            password = getpass.getpass("Password: ")
+            confirm = getpass.getpass("Confirm password: ")
+            if password != confirm:
+                print("Passwords do not match.")
+                sys.exit(1)
+
+        if len(password) < 8:
+            print("Password must be at least 8 characters.")
+            sys.exit(1)
+
+        user = User(
+            email=email,
+            display_name=args.name or email.split("@")[0],
+            password_hash=hash_password(password),
+        )
+        session.add(user)
+        session.commit()
+        print(f"Created user: {user.display_name} ({user.email})")
+    finally:
+        session.close()
+
+
 def cmd_dashboard(args: argparse.Namespace) -> None:
     """Launch the web dashboard."""
     from .dashboard import create_app
 
     config = load_config(args.config)
-    host = args.host or config.dashboard.host
-    port = args.port or config.dashboard.port
+    server_config = load_server_config()
+    host = args.host or server_config.host
+    port = args.port or server_config.port
 
-    app = create_app(config)
+    app = create_app(config, server_config)
     print(f"Starting dashboard at http://{host}:{port}")
-    app.run(host=host, port=port, debug=config.dashboard.debug)
+    app.run(host=host, port=port, debug=args.debug)
 
 
 def main() -> None:
@@ -219,10 +262,17 @@ def main() -> None:
     # report
     subparsers.add_parser("report", help="Generate and send email report")
 
+    # create-user
+    user_p = subparsers.add_parser("create-user", help="Create a user account")
+    user_p.add_argument("email", help="User email address")
+    user_p.add_argument("--name", "-n", help="Display name")
+    user_p.add_argument("--password", "-p", help="Password (omit to prompt)")
+
     # dashboard
     dash_p = subparsers.add_parser("dashboard", help="Launch web dashboard")
     dash_p.add_argument("--host", help="Host to bind to")
     dash_p.add_argument("--port", type=int, help="Port to bind to")
+    dash_p.add_argument("--debug", action="store_true", help="Enable debug mode")
 
     args = parser.parse_args()
     setup_logging(args.verbose)
@@ -241,6 +291,7 @@ def main() -> None:
         "scrape": cmd_scrape,
         "metrics": cmd_metrics,
         "report": cmd_report,
+        "create-user": cmd_create_user,
         "dashboard": cmd_dashboard,
     }
 

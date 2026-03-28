@@ -172,6 +172,35 @@ tr:hover {
 .badge-primary { background: var(--primary-light); color: var(--primary); }
 .badge-success { background: #dcfce7; color: var(--success); }
 .badge-danger { background: #fef2f2; color: var(--danger); }
+.badge-pending { background: #fef3c7; color: #92400e; }
+
+/* Data status banners */
+.banner {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.banner-warning {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
+.banner-info {
+    background: var(--primary-light);
+    color: var(--primary);
+    border: 1px solid #bfdbfe;
+}
+
+.banner-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
 
 /* Interest tags */
 .tag {
@@ -326,4 +355,227 @@ select, input[type="text"] {
 
 .checkbox-list input {
     margin-right: 0.5rem;
+}
+
+/* Auth pages */
+.auth-container {
+    display: flex;
+    justify-content: center;
+    padding-top: 2rem;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 420px;
+}
+
+.auth-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.auth-footer {
+    text-align: center;
+    margin-top: 1.25rem;
+    font-size: 0.9rem;
+    color: var(--gray-500);
+}
+
+/* Form groups */
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--gray-700);
+    margin-bottom: 0.35rem;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 6px;
+    font-size: 0.95rem;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.btn-block {
+    display: block;
+    width: 100%;
+    margin-top: 1rem;
+}
+
+/* Alerts */
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.alert-danger {
+    background: #fef2f2;
+    color: var(--danger);
+    border: 1px solid #fecaca;
+}
+
+.alert-success {
+    background: #dcfce7;
+    color: var(--success);
+    border: 1px solid #bbf7d0;
+}
+
+.alert-info {
+    background: var(--primary-light);
+    color: var(--primary);
+    border: 1px solid #bfdbfe;
+}
+
+/* Navbar auth elements */
+.nav-user {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.nav-user-name {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+}
+
+.nav-notifications {
+    position: relative;
+    font-size: 1.1rem;
+}
+
+.notification-badge {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    background: var(--danger);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Notifications page */
+.notification-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--gray-200);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.notification-item:last-child {
+    border-bottom: none;
+}
+
+.notification-item.unread {
+    background: var(--primary-light);
+}
+
+.notification-content {
+    flex: 1;
+}
+
+.notification-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.notification-message {
+    font-size: 0.9rem;
+    color: var(--gray-500);
+}
+
+.notification-time {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+    white-space: nowrap;
+}
+
+/* Add scholar form */
+.add-scholar-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.add-scholar-form .form-group {
+    margin-bottom: 0;
+    flex: 1;
+}
+
+/* Inline action buttons */
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+}
+
+.btn-ghost {
+    background: none;
+    color: var(--gray-500);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.btn-ghost:hover {
+    color: var(--gray-700);
+    background: var(--gray-100);
+}
+
+/* Scholar settings */
+.settings-section {
+    margin-bottom: 1.5rem;
+}
+
+.settings-section h3 {
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    color: var(--gray-700);
+}
+
+.toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--gray-100);
+}
+
+.toggle-label {
+    font-size: 0.9rem;
+}
+
+.toggle-description {
+    font-size: 0.8rem;
+    color: var(--gray-500);
 }
