@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
 
     steps:
@@ -41,18 +41,66 @@ jobs:
           name: ScholarWatch-windows
           path: dist/ScholarWatch.exe
 
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: arm64
+          - runner: macos-13
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build executable
+        run: pyinstaller scholar_watch.spec
+
+      - name: Verify build
+        run: |
+          test -f dist/ScholarWatch
+          test "$(stat -f%z dist/ScholarWatch)" -gt 1000000
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScholarWatch-macos-${{ matrix.arch }}
+          path: dist/ScholarWatch
+
   release:
-    needs: build
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ScholarWatch-windows
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mv artifacts/ScholarWatch-windows/ScholarWatch.exe ScholarWatch-windows.exe
+          mv artifacts/ScholarWatch-macos-arm64/ScholarWatch ScholarWatch-macos-arm64
+          mv artifacts/ScholarWatch-macos-x64/ScholarWatch ScholarWatch-macos-x64
+          chmod +x ScholarWatch-macos-arm64 ScholarWatch-macos-x64
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ScholarWatch.exe
+          files: |
+            ScholarWatch-windows.exe
+            ScholarWatch-macos-arm64
+            ScholarWatch-macos-x64
           generate_release_notes: true

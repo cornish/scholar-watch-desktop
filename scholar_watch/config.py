@@ -14,13 +14,22 @@ from dotenv import load_dotenv
 def _get_project_root() -> Path:
     """Return the project root, handling both normal and PyInstaller frozen modes.
 
-    Frozen (PyInstaller):  use %LOCALAPPDATA%/ScholarWatch as the data root
+    Frozen (PyInstaller):  use a platform-appropriate data directory
     so the DB, config, and logs persist outside the temp bundle directory.
+      - Windows: %LOCALAPPDATA%/ScholarWatch
+      - macOS:   ~/Library/Application Support/ScholarWatch
+      - Linux:   ~/.local/share/ScholarWatch
 
     Development:  use the repo root (parent of the scholar_watch package).
     """
     if getattr(sys, "frozen", False):
-        return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ScholarWatch"
+        if sys.platform == "win32":
+            base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+        elif sys.platform == "darwin":
+            base = Path.home() / "Library" / "Application Support"
+        else:
+            base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+        return base / "ScholarWatch"
     return Path(__file__).resolve().parent.parent
 
 
