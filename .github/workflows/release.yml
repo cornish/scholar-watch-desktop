@@ -42,14 +42,7 @@ jobs:
           path: dist/ScholarWatch.exe
 
   build-macos:
-    strategy:
-      matrix:
-        include:
-          - runner: macos-latest
-            arch: arm64
-          - runner: macos-13
-            arch: x64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +69,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ScholarWatch-macos-${{ matrix.arch }}
+          name: ScholarWatch-macos
           path: dist/ScholarWatch
 
   release:
@@ -92,15 +85,13 @@ jobs:
       - name: Prepare release assets
         run: |
           mv artifacts/ScholarWatch-windows/ScholarWatch.exe ScholarWatch-windows.exe
-          mv artifacts/ScholarWatch-macos-arm64/ScholarWatch ScholarWatch-macos-arm64
-          mv artifacts/ScholarWatch-macos-x64/ScholarWatch ScholarWatch-macos-x64
-          chmod +x ScholarWatch-macos-arm64 ScholarWatch-macos-x64
+          mv artifacts/ScholarWatch-macos/ScholarWatch ScholarWatch-macos
+          chmod +x ScholarWatch-macos
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ScholarWatch-windows.exe
-            ScholarWatch-macos-arm64
-            ScholarWatch-macos-x64
+            ScholarWatch-macos
           generate_release_notes: true
