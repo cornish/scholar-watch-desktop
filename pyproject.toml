@@ -5,19 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "scholar-watch"
 version = "0.1.0"
-description = "Track citation performance of researchers on Google Scholar"
+description = "Desktop app to track citation performance of researchers on Google Scholar"
 requires-python = ">=3.10"
 dependencies = [
     "scholarly>=1.7",
     "SQLAlchemy>=2.0",
-    "Flask>=3.0",
-    "flask-login>=0.6",
+    "Eel>=0.16",
     "plotly>=5.18",
     "kaleido>=0.2",
     "PyYAML>=6.0",
-    "Jinja2>=3.1",
-    "bcrypt>=4.0",
-    "gunicorn>=22.0",
     "python-dotenv>=1.0",
     "alembic>=1.12",
 ]

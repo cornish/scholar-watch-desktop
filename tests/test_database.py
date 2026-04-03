@@ -31,6 +31,7 @@ def test_init_db_creates_tables(db_config):
     assert "citation_snapshots" in tables
     assert "researcher_snapshots" in tables
     assert "scrape_runs" in tables
+    assert "notifications" in tables
 
 
 def test_add_researcher(db_config):

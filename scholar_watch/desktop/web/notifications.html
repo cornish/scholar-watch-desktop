@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notifications - Scholar Watch</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script type="text/javascript" src="/eel.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="navbar-brand">Scholar Watch</a>
+        <ul class="navbar-nav">
+            <li><a href="index.html">My Scholars</a></li>
+            <li><a href="compare.html">Compare</a></li>
+            <li>
+                <a href="notifications.html" class="nav-notifications active" id="nav-notif-link">
+                    &#128276;<span class="notification-badge" id="notif-badge" style="display:none;"></span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h1 class="page-title" style="margin-bottom: 0;">Notifications</h1>
+            <button id="mark-all-btn" class="btn btn-outline btn-sm" style="display:none;" onclick="handleMarkAllRead()">Mark all as read</button>
+        </div>
+
+        <div id="notifications-list"></div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        async function loadNotifications() {
+            const data = await eel.get_notifications()();
+            const container = document.getElementById("notifications-list");
+            const markAllBtn = document.getElementById("mark-all-btn");
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="card"><p>No notifications yet. You\'ll see updates here when your tracked scholars have new publications, citation milestones, or h-index changes.</p></div>';
+                markAllBtn.style.display = "none";
+                return;
+            }
+
+            const hasUnread = data.some(n => !n.is_read);
+            markAllBtn.style.display = hasUnread ? "inline-block" : "none";
+
+            let html = '<div class="card" style="padding: 0;">';
+            for (const n of data) {
+                html += '<div class="notification-item ' + (n.is_read ? '' : 'unread') + '">';
+                html += '<div class="notification-content">';
+                html += '<div class="notification-title">' + escapeHtml(n.title) + '</div>';
+                html += '<div class="notification-message">' + escapeHtml(n.message) + '</div>';
+                html += '</div>';
+                html += '<div style="display: flex; align-items: center; gap: 0.75rem;">';
+                html += '<span class="notification-time">' + escapeHtml(n.created_at) + '</span>';
+                if (!n.is_read) {
+                    html += '<button class="btn btn-ghost btn-sm" title="Mark as read" onclick="handleMarkRead(' + n.id + ')">&#10003;</button>';
+                }
+                html += '</div></div>';
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        async function handleMarkRead(id) {
+            await eel.mark_notification_read(id)();
+            loadNotifications();
+            updateNotifBadge();
+        }
+
+        async function handleMarkAllRead() {
+            await eel.mark_all_read()();
+            loadNotifications();
+            updateNotifBadge();
+        }
+
+        loadNotifications();
+        updateNotifBadge();
+    </script>
+</body>
+</html>

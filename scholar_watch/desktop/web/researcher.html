@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Researcher - Scholar Watch</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script type="text/javascript" src="/eel.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="navbar-brand">Scholar Watch</a>
+        <ul class="navbar-nav">
+            <li><a href="index.html">My Scholars</a></li>
+            <li><a href="compare.html">Compare</a></li>
+            <li>
+                <a href="notifications.html" class="nav-notifications" id="nav-notif-link">
+                    &#128276;<span class="notification-badge" id="notif-badge" style="display:none;"></span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div id="alert-area"></div>
+        <div id="content">
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const scholarId = params.get("id");
+
+        async function loadDetail() {
+            if (!scholarId) {
+                document.getElementById("content").innerHTML = '<p>No researcher specified.</p>';
+                return;
+            }
+
+            const data = await eel.get_researcher_detail(scholarId)();
+            if (data.error) {
+                document.getElementById("content").innerHTML = '<p>' + escapeHtml(data.error) + '</p>';
+                return;
+            }
+
+            const r = data.researcher;
+            const m = data.metrics;
+            document.title = r.name + " - Scholar Watch";
+
+            let html = '<h1 class="page-title">' + escapeHtml(r.name) + '</h1>';
+
+            if (r.affiliation) {
+                html += '<p style="color: var(--gray-500); margin-top: -1rem; margin-bottom: 1rem;">' +
+                    escapeHtml(r.affiliation) + '</p>';
+            }
+
+            if (data.interests && data.interests.length) {
+                html += '<div style="margin-bottom: 1rem;">';
+                for (const tag of data.interests) {
+                    html += '<span class="tag">' + escapeHtml(tag) + '</span> ';
+                }
+                html += '</div>';
+            }
+
+            // Banners
+            if (!r.last_scraped_at) {
+                html += '<div class="banner banner-warning"><span class="banner-icon">&#9888;</span><div>' +
+                    '<strong>No data yet.</strong> This scholar has not been scraped. ' +
+                    'Click "Scrape" on the home page to fetch data.</div></div>';
+            } else if (data.snapshot_count === 1) {
+                html += '<div class="banner banner-info"><span class="banner-icon">&#8505;</span><div>' +
+                    '<strong>Limited data.</strong> Only one scrape recorded. Trends and velocity require ' +
+                    'at least two data points.</div></div>';
+            }
+
+            // Stats
+            if (m) {
+                html += '<div class="grid grid-4" style="margin-bottom: 1.5rem;">';
+                html += statCard(m.total_citations, "Total Citations");
+                html += statCard(m.h_index, "h-index");
+                html += statCard(m.i10_index, "i10-index");
+                html += statCard(m.num_publications, "Publications");
+                html += '</div>';
+
+                html += '<div class="grid grid-3" style="margin-bottom: 1.5rem;">';
+                html += statCard(m.citation_velocity.toFixed(2), "Velocity (cites/day)");
+                const accClass = m.citation_acceleration > 0 ? "delta-positive" :
+                    (m.citation_acceleration < 0 ? "delta-negative" : "");
+                html += '<div class="card stat-card"><div class="stat-value ' + accClass + '">' +
+                    m.citation_acceleration.toFixed(3) + '</div><div class="stat-label">Acceleration</div></div>';
+                html += statCard(m.citation_half_life != null ? m.citation_half_life : '-', "Half-Life (years)");
+                html += '</div>';
+            }
+
+            // Tabs
+            html += '<div class="tabs" data-tab-group="researcher">';
+            html += '<button class="tab-btn active" data-tab="tab-overview">Overview</button>';
+            html += '<button class="tab-btn" data-tab="tab-hindex">h-index</button>';
+            html += '<button class="tab-btn" data-tab="tab-trending">Trending</button>';
+            html += '<button class="tab-btn" data-tab="tab-publications">Publications</button>';
+            html += '</div>';
+
+            // Overview tab
+            html += '<div id="tab-overview" class="tab-panel active" data-tab-group="researcher">';
+            html += '<div class="grid grid-2">';
+            html += '<div class="card chart-container"><div id="chart-citations"></div></div>';
+            html += '<div class="card chart-container"><div id="chart-hindex"></div></div>';
+            html += '</div>';
+            html += '<div class="grid grid-2">';
+            html += '<div class="card chart-container"><div id="chart-velocity"></div></div>';
+            html += '<div class="card chart-container"><div id="chart-cpy"></div></div>';
+            html += '</div>';
+            html += '<div class="card chart-container"><div id="chart-top-papers"></div></div>';
+            html += '</div>';
+
+            // h-index tab
+            html += '<div id="tab-hindex" class="tab-panel" data-tab-group="researcher">';
+            html += '<div class="card chart-container"><div id="chart-hboundary"></div></div>';
+            if (data.h_candidates && data.h_candidates.length) {
+                html += '<div class="card"><h2 class="card-title">h-index Candidates</h2>';
+                html += '<p style="color: var(--gray-500); margin-bottom: 1rem;">' +
+                    'Papers closest to pushing the computed h-index from ' + data.computed_h +
+                    ' to ' + (data.computed_h + 1) + '.' +
+                    (m ? ' Google Scholar reports h = ' + m.h_index + '.' : '') + '</p>';
+                html += '<div class="table-wrapper"><table><thead><tr>' +
+                    '<th>Title</th><th>Citations</th><th>Needed</th><th>Velocity</th><th>Est. Days</th>' +
+                    '</tr></thead><tbody>';
+                for (const c of data.h_candidates) {
+                    html += '<tr>';
+                    html += '<td><a href="publication.html?id=' + c.publication_id + '">' +
+                        escapeHtml(c.title) + '</a></td>';
+                    html += '<td>' + c.current_citations + '</td>';
+                    html += '<td>' + (c.citations_needed === 0 ?
+                        '<span class="delta-positive">&#10003; ready</span>' : c.citations_needed) + '</td>';
+                    html += '<td>' + (c.velocity > 0 ? '+' + c.velocity.toFixed(3) + '/day' : '&mdash;') + '</td>';
+                    html += '<td>' + (c.days_to_h != null ? '~' + Math.round(c.days_to_h) + ' d' : '&mdash;') + '</td>';
+                    html += '</tr>';
+                }
+                html += '</tbody></table></div></div>';
+            }
+            html += '</div>';
+
+            // Trending tab
+            html += '<div id="tab-trending" class="tab-panel" data-tab-group="researcher">';
+            if (m && m.trending_papers && m.trending_papers.length) {
+                html += '<div class="card"><h2 class="card-title">Trending Papers</h2>';
+                html += '<div class="table-wrapper"><table><thead><tr>' +
+                    '<th>Title</th><th>Citations</th><th>Last 7 d</th><th>Last 30 d</th><th>Velocity</th>' +
+                    '</tr></thead><tbody>';
+                for (const p of m.trending_papers) {
+                    html += '<tr>';
+                    html += '<td>' + escapeHtml(p.title) + '</td>';
+                    html += '<td>' + p.current_citations + '</td>';
+                    html += '<td>' + renderNewCites(p.new_citations_7d) + '</td>';
+                    html += '<td>' + renderNewCites(p.new_citations_30d) + '</td>';
+                    html += '<td class="delta-positive">+' + p.velocity.toFixed(3) + '/day</td>';
+                    html += '</tr>';
+                }
+                html += '</tbody></table></div></div>';
+            }
+            if (m && m.declining_papers && m.declining_papers.length) {
+                html += '<div class="card"><h2 class="card-title">Declining Papers</h2>';
+                html += '<div class="table-wrapper"><table><thead><tr>' +
+                    '<th>Title</th><th>Citations</th><th>Change</th>' +
+                    '</tr></thead><tbody>';
+                for (const p of m.declining_papers.slice(0, 10)) {
+                    html += '<tr>';
+                    html += '<td>' + escapeHtml(p.title) + '</td>';
+                    html += '<td>' + p.current_citations + '</td>';
+                    html += '<td class="delta-negative">' + p.citation_delta + '</td>';
+                    html += '</tr>';
+                }
+                html += '</tbody></table></div></div>';
+            }
+            html += '</div>';
+
+            // Publications tab
+            html += '<div id="tab-publications" class="tab-panel" data-tab-group="researcher">';
+            html += '<div class="card"><h2 class="card-title">All Publications</h2>';
+            html += '<div class="table-wrapper"><table><thead><tr>' +
+                '<th>Title</th><th>Year</th><th>Citations</th><th>Change</th>' +
+                '</tr></thead><tbody>';
+            for (const item of data.publications) {
+                html += '<tr>';
+                html += '<td><a href="publication.html?id=' + item.id + '">' +
+                    escapeHtml(item.title) + '</a></td>';
+                html += '<td>' + (item.year || '-') + '</td>';
+                html += '<td>' + item.citations + '</td>';
+                html += '<td>';
+                if (item.delta != null && item.delta !== 0) {
+                    const cls = item.delta > 0 ? 'delta-up' : 'delta-down';
+                    const arrow = item.delta > 0 ? '&#9650;' : '&#9660;';
+                    html += '<span class="delta-indicator ' + cls + '"><span class="delta-arrow">' +
+                        arrow + '</span>' + Math.abs(item.delta) + '</span>';
+                } else if (item.delta != null) {
+                    html += '<span class="delta-indicator delta-unchanged">&mdash;</span>';
+                } else {
+                    html += '<span class="delta-indicator delta-unchanged">new</span>';
+                }
+                html += '</td></tr>';
+            }
+            html += '</tbody></table></div>';
+            if (data.pub_delta_since) {
+                html += '<p class="delta-since-label">Changes since ' + escapeHtml(data.pub_delta_since) + '</p>';
+            }
+            html += '</div></div>';
+
+            document.getElementById("content").innerHTML = html;
+
+            // Initialize tabs
+            initTabs();
+
+            // Render charts
+            if (data.charts) {
+                renderChart("chart-citations", data.charts.citations);
+                renderChart("chart-hindex", data.charts.h_index);
+                renderChart("chart-velocity", data.charts.velocity);
+                renderChart("chart-cpy", data.charts.cites_per_year);
+                renderChart("chart-top-papers", data.charts.top_papers);
+                renderChart("chart-hboundary", data.charts.h_boundary);
+            }
+        }
+
+        function renderNewCites(val) {
+            if (val != null && val > 0) return '<span class="delta-positive">+' + val + '</span>';
+            if (val != null) return '' + val;
+            return '&mdash;';
+        }
+
+        function statCard(value, label) {
+            return '<div class="card stat-card"><div class="stat-value">' + value +
+                '</div><div class="stat-label">' + label + '</div></div>';
+        }
+
+        loadDetail();
+        updateNotifBadge();
+    </script>
+</body>
+</html>

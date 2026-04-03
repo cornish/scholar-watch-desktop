@@ -5,7 +5,6 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Integer,
     JSON,
@@ -119,53 +118,10 @@ class ScrapeRun(Base):
         return f"<ScrapeRun(id={self.id}, status='{self.status}', started_at='{self.started_at}')>"
 
 
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-
-    watched_scholars: Mapped[list["UserScholar"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    notifications: Mapped[list["Notification"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-
-    def __repr__(self) -> str:
-        return f"<User(id={self.id}, email='{self.email}')>"
-
-
-class UserScholar(Base):
-    __tablename__ = "user_scholars"
-    __table_args__ = (
-        UniqueConstraint("user_id", "researcher_id", name="uq_user_researcher"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    researcher_id: Mapped[int] = mapped_column(Integer, ForeignKey("researchers.id"), nullable=False, index=True)
-    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    notify_new_publications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    notify_citation_milestones: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    notify_h_index_change: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-
-    user: Mapped["User"] = relationship(back_populates="watched_scholars")
-    researcher: Mapped["Researcher"] = relationship()
-
-    def __repr__(self) -> str:
-        return f"<UserScholar(user_id={self.user_id}, researcher_id={self.researcher_id})>"
-
-
 class Notification(Base):
     __tablename__ = "notifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     notification_type: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
@@ -173,8 +129,6 @@ class Notification(Base):
     publication_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("publications.id"))
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-
-    user: Mapped["User"] = relationship(back_populates="notifications")
 
     def __repr__(self) -> str:
         return f"<Notification(id={self.id}, type='{self.notification_type}', read={self.is_read})>"

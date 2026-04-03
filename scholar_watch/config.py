@@ -75,23 +75,6 @@ class DashboardConfig:
     debug: bool = False
 
 
-@dataclass
-class ServerConfig:
-    host: str = "127.0.0.1"
-    port: int = 9743
-    secret_key: str = "dev-key-change-me"
-
-
-def load_server_config() -> ServerConfig:
-    """Load server config from environment variables."""
-    return ServerConfig(
-        host=os.environ.get("SCHOLAR_WATCH_HOST", "127.0.0.1"),
-        port=int(os.environ.get("SCHOLAR_WATCH_PORT", "9743")),
-        secret_key=os.environ.get(
-            "SCHOLAR_WATCH_SECRET_KEY", "dev-key-change-me"
-        ),
-    )
-
 
 @dataclass
 class AppConfig:

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scholar Watch</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script type="text/javascript" src="/eel.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="navbar-brand">Scholar Watch</a>
+        <ul class="navbar-nav">
+            <li><a href="index.html" class="active">My Scholars</a></li>
+            <li><a href="compare.html">Compare</a></li>
+            <li>
+                <a href="notifications.html" class="nav-notifications" id="nav-notif-link">
+                    &#128276;<span class="notification-badge" id="notif-badge" style="display:none;"></span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div id="alert-area"></div>
+
+        <h1 class="page-title">My Scholars</h1>
+
+        <div class="card">
+            <h2 class="card-title">Add a Scholar</h2>
+            <form id="add-form" class="add-scholar-form" onsubmit="return handleAdd(event)">
+                <div class="form-group">
+                    <label for="scholar_id">Google Scholar ID or Profile URL</label>
+                    <input type="text" id="scholar_id" required
+                           placeholder="e.g. g9uuZu6YAAAAJ or https://scholar.google.com/citations?user=...">
+                </div>
+                <button type="submit" class="btn btn-primary">Add</button>
+            </form>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <button class="btn btn-outline" onclick="handleScrape()" id="scrape-btn">Scrape All</button>
+            <span id="scrape-status" style="margin-left: 0.75rem; font-size: 0.9rem; color: var(--gray-500);"></span>
+        </div>
+
+        <div id="researchers-table"></div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        async function loadResearchers() {
+            const data = await eel.get_researchers()();
+            const container = document.getElementById("researchers-table");
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="card"><p>No scholars tracked yet. Use the form above to add a Google Scholar ID to start tracking.</p></div>';
+                return;
+            }
+
+            let deltaSince = "";
+            if (data[0].deltas) {
+                deltaSince = '<p class="delta-since-label">Changes since ' + data[0].deltas.since + '</p>';
+            }
+
+            let html = '<div class="table-wrapper card"><table><thead><tr>' +
+                '<th>Name</th><th>Affiliation</th><th>Publications</th>' +
+                '<th>Citations</th><th>h-index</th><th>i10-index</th>' +
+                '<th>Last Scraped</th><th></th></tr></thead><tbody>';
+
+            for (const r of data) {
+                html += '<tr>';
+                html += '<td><a href="researcher.html?id=' + encodeURIComponent(r.scholar_id) + '">' +
+                    escapeHtml(r.name || r.scholar_id) + '</a></td>';
+                html += '<td>' + escapeHtml(r.affiliation || '-') + '</td>';
+                html += '<td>' + r.pub_count + '</td>';
+                html += '<td>' + (r.total_citations != null ? r.total_citations : '-') +
+                    renderDelta(r.deltas, 'citations') + '</td>';
+                html += '<td>' + (r.h_index != null ? r.h_index : '-') +
+                    renderDelta(r.deltas, 'h_index') + '</td>';
+                html += '<td>' + (r.i10_index != null ? r.i10_index : '-') +
+                    renderDelta(r.deltas, 'i10_index') + '</td>';
+                html += '<td>' + (r.last_scraped_at || '<span class="badge badge-pending">Awaiting first scrape</span>') + '</td>';
+                html += '<td><button class="btn btn-ghost" title="Remove" onclick="handleRemove(' + r.id + ', \'' +
+                    escapeHtml(r.name) + '\')">&times;</button></td>';
+                html += '</tr>';
+            }
+
+            html += '</tbody></table>' + deltaSince + '</div>';
+            container.innerHTML = html;
+        }
+
+        async function handleAdd(e) {
+            e.preventDefault();
+            const input = document.getElementById("scholar_id");
+            const result = await eel.add_researcher(input.value)();
+            if (result.error) {
+                showAlert(result.error, "danger");
+            } else {
+                showAlert(result.message, "success");
+                input.value = "";
+                loadResearchers();
+            }
+            return false;
+        }
+
+        async function handleRemove(id, name) {
+            if (!confirm("Remove " + name + " from your watchlist?")) return;
+            const result = await eel.remove_researcher(id)();
+            if (result.success) {
+                loadResearchers();
+            }
+        }
+
+        async function handleScrape() {
+            const btn = document.getElementById("scrape-btn");
+            const status = document.getElementById("scrape-status");
+            btn.disabled = true;
+            btn.textContent = "Scraping...";
+            status.textContent = "Scrape in progress...";
+
+            const result = await eel.trigger_scrape(null)();
+            if (result.error) {
+                showAlert(result.error, "danger");
+                btn.disabled = false;
+                btn.textContent = "Scrape All";
+                status.textContent = "";
+            }
+        }
+
+        eel.expose(on_scrape_complete);
+        function on_scrape_complete(result) {
+            const btn = document.getElementById("scrape-btn");
+            const status = document.getElementById("scrape-status");
+            btn.disabled = false;
+            btn.textContent = "Scrape All";
+
+            if (result.status === "completed") {
+                status.textContent = "Done: " + result.researchers_scraped + " researchers, " +
+                    result.publications_found + " publications";
+                showAlert("Scrape completed successfully.", "success");
+            } else {
+                status.textContent = "Error: " + (result.error || "unknown");
+                showAlert("Scrape failed: " + (result.error || "unknown error"), "danger");
+            }
+            loadResearchers();
+            updateNotifBadge();
+        }
+
+        loadResearchers();
+        updateNotifBadge();
+    </script>
+</body>
+</html>

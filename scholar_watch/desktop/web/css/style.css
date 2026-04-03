@@ -1,4 +1,4 @@
-/* Scholar Watch Dashboard Styles */
+/* Scholar Watch Desktop Styles */
 
 :root {
     --primary: #2563eb;
@@ -245,6 +245,37 @@ tr:hover {
     background: var(--primary-light);
 }
 
+.btn-danger {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.btn-ghost {
+    background: none;
+    color: var(--gray-500);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.btn-ghost:hover {
+    color: var(--gray-700);
+    background: var(--gray-100);
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* Charts */
 .chart-container {
     margin-bottom: 1rem;
@@ -260,7 +291,7 @@ a:hover {
     text-decoration: underline;
 }
 
-/* Delta indicators (inline, next to values) */
+/* Delta indicators */
 .delta-indicator {
     display: inline-block;
     font-size: 0.8rem;
@@ -269,23 +300,10 @@ a:hover {
     white-space: nowrap;
 }
 
-.delta-up {
-    color: var(--success);
-}
-
-.delta-down {
-    color: var(--danger);
-}
-
-.delta-unchanged {
-    color: var(--gray-500);
-    font-weight: 400;
-}
-
-.delta-arrow {
-    font-size: 0.65rem;
-    margin-right: 0.1rem;
-}
+.delta-up { color: var(--success); }
+.delta-down { color: var(--danger); }
+.delta-unchanged { color: var(--gray-500); font-weight: 400; }
+.delta-arrow { font-size: 0.65rem; margin-right: 0.1rem; }
 
 .delta-since-label {
     padding: 0.5rem 1rem 0;
@@ -294,7 +312,6 @@ a:hover {
     text-align: right;
 }
 
-/* Legacy delta classes */
 .delta-positive { color: var(--success); }
 .delta-negative { color: var(--danger); }
 .delta-zero { color: var(--gray-500); }
@@ -320,9 +337,7 @@ a:hover {
     transition: color 0.2s, border-color 0.2s;
 }
 
-.tab-btn:hover {
-    color: var(--gray-700);
-}
+.tab-btn:hover { color: var(--gray-700); }
 
 .tab-btn.active {
     color: var(--primary);
@@ -330,13 +345,8 @@ a:hover {
     font-weight: 600;
 }
 
-.tab-panel {
-    display: none;
-}
-
-.tab-panel.active {
-    display: block;
-}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
 
 /* Form elements */
 select, input[type="text"] {
@@ -346,44 +356,6 @@ select, input[type="text"] {
     font-size: 0.9rem;
 }
 
-/* Checkbox list */
-.checkbox-list label {
-    display: block;
-    padding: 0.35rem 0;
-    cursor: pointer;
-}
-
-.checkbox-list input {
-    margin-right: 0.5rem;
-}
-
-/* Auth pages */
-.auth-container {
-    display: flex;
-    justify-content: center;
-    padding-top: 2rem;
-}
-
-.auth-card {
-    width: 100%;
-    max-width: 420px;
-}
-
-.auth-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin-bottom: 1.5rem;
-    text-align: center;
-}
-
-.auth-footer {
-    text-align: center;
-    margin-top: 1.25rem;
-    font-size: 0.9rem;
-    color: var(--gray-500);
-}
-
-/* Form groups */
 .form-group {
     margin-bottom: 1rem;
 }
@@ -410,10 +382,15 @@ select, input[type="text"] {
     box-shadow: 0 0 0 3px var(--primary-light);
 }
 
-.btn-block {
+/* Checkbox list */
+.checkbox-list label {
     display: block;
-    width: 100%;
-    margin-top: 1rem;
+    padding: 0.35rem 0;
+    cursor: pointer;
+}
+
+.checkbox-list input {
+    margin-right: 0.5rem;
 }
 
 /* Alerts */
@@ -442,18 +419,19 @@ select, input[type="text"] {
     border: 1px solid #bfdbfe;
 }
 
-/* Navbar auth elements */
-.nav-user {
+/* Add scholar form */
+.add-scholar-form {
     display: flex;
-    align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
+    align-items: flex-end;
 }
 
-.nav-user-name {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.85rem;
+.add-scholar-form .form-group {
+    margin-bottom: 0;
+    flex: 1;
 }
 
+/* Notification badge */
 .nav-notifications {
     position: relative;
     font-size: 1.1rem;
@@ -485,97 +463,10 @@ select, input[type="text"] {
     gap: 1rem;
 }
 
-.notification-item:last-child {
-    border-bottom: none;
-}
+.notification-item:last-child { border-bottom: none; }
+.notification-item.unread { background: var(--primary-light); }
 
-.notification-item.unread {
-    background: var(--primary-light);
-}
-
-.notification-content {
-    flex: 1;
-}
-
-.notification-title {
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-}
-
-.notification-message {
-    font-size: 0.9rem;
-    color: var(--gray-500);
-}
-
-.notification-time {
-    font-size: 0.8rem;
-    color: var(--gray-500);
-    white-space: nowrap;
-}
-
-/* Add scholar form */
-.add-scholar-form {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-end;
-}
-
-.add-scholar-form .form-group {
-    margin-bottom: 0;
-    flex: 1;
-}
-
-/* Inline action buttons */
-.btn-sm {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-}
-
-.btn-danger {
-    background: var(--danger);
-    color: white;
-}
-
-.btn-danger:hover {
-    background: #b91c1c;
-}
-
-.btn-ghost {
-    background: none;
-    color: var(--gray-500);
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-}
-
-.btn-ghost:hover {
-    color: var(--gray-700);
-    background: var(--gray-100);
-}
-
-/* Scholar settings */
-.settings-section {
-    margin-bottom: 1.5rem;
-}
-
-.settings-section h3 {
-    font-size: 1rem;
-    margin-bottom: 0.75rem;
-    color: var(--gray-700);
-}
-
-.toggle-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--gray-100);
-}
-
-.toggle-label {
-    font-size: 0.9rem;
-}
-
-.toggle-description {
-    font-size: 0.8rem;
-    color: var(--gray-500);
-}
+.notification-content { flex: 1; }
+.notification-title { font-weight: 600; margin-bottom: 0.25rem; }
+.notification-message { font-size: 0.9rem; color: var(--gray-500); }
+.notification-time { font-size: 0.8rem; color: var(--gray-500); white-space: nowrap; }

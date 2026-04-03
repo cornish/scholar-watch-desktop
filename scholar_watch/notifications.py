@@ -12,7 +12,6 @@ from .models import (
     Researcher,
     ResearcherSnapshot,
     ScrapeRun,
-    UserScholar,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,13 +55,6 @@ class NotificationGenerator:
         logger.info("Generated %d notifications for scrape run %d", count, run.id)
         return count
 
-    def _get_watchers(self, researcher_id: int) -> list[UserScholar]:
-        return (
-            self.session.query(UserScholar)
-            .filter(UserScholar.researcher_id == researcher_id)
-            .all()
-        )
-
     def _check_h_index_change(
         self, researcher: Researcher, current: ResearcherSnapshot
     ) -> int:
@@ -85,22 +77,14 @@ class NotificationGenerator:
             return 0
 
         direction = "increased" if delta > 0 else "decreased"
-        count = 0
-
-        for us in self._get_watchers(researcher.id):
-            if not us.notify_h_index_change:
-                continue
-            notif = Notification(
-                user_id=us.user_id,
-                notification_type="h_index_change",
-                title=f"h-index {direction} for {researcher.name}",
-                message=f"h-index went from {previous.h_index} to {current.h_index} ({delta:+d})",
-                researcher_id=researcher.id,
-            )
-            self.session.add(notif)
-            count += 1
-
-        return count
+        notif = Notification(
+            notification_type="h_index_change",
+            title=f"h-index {direction} for {researcher.name}",
+            message=f"h-index went from {previous.h_index} to {current.h_index} ({delta:+d})",
+            researcher_id=researcher.id,
+        )
+        self.session.add(notif)
+        return 1
 
     def _check_citation_milestones(
         self, researcher: Researcher, current: ResearcherSnapshot
@@ -126,29 +110,20 @@ class NotificationGenerator:
         if not crossed:
             return 0
 
-        count = 0
         milestone = crossed[-1]  # Report the highest milestone crossed
-
-        for us in self._get_watchers(researcher.id):
-            if not us.notify_citation_milestones:
-                continue
-            notif = Notification(
-                user_id=us.user_id,
-                notification_type="citation_milestone",
-                title=f"{researcher.name} reached {milestone:,} citations!",
-                message=f"Total citations: {curr_cites:,} (was {prev_cites:,})",
-                researcher_id=researcher.id,
-            )
-            self.session.add(notif)
-            count += 1
-
-        return count
+        notif = Notification(
+            notification_type="citation_milestone",
+            title=f"{researcher.name} reached {milestone:,} citations!",
+            message=f"Total citations: {curr_cites:,} (was {prev_cites:,})",
+            researcher_id=researcher.id,
+        )
+        self.session.add(notif)
+        return 1
 
     def _check_new_publications(
         self, researcher: Researcher, run: ScrapeRun
     ) -> int:
         """Check for publications first seen during this scrape run."""
-        # Find publications whose first_seen_at is very close to this run
         new_pubs = (
             self.session.query(Publication)
             .filter(
@@ -161,31 +136,23 @@ class NotificationGenerator:
         if not new_pubs:
             return 0
 
-        count = 0
         titles = [p.title for p in new_pubs[:5]]
         extra = len(new_pubs) - 5 if len(new_pubs) > 5 else 0
 
-        for us in self._get_watchers(researcher.id):
-            if not us.notify_new_publications:
-                continue
+        if len(new_pubs) == 1:
+            title = f"New publication by {researcher.name}"
+            message = new_pubs[0].title
+        else:
+            title = f"{len(new_pubs)} new publications by {researcher.name}"
+            message = "\n".join(f"- {t}" for t in titles)
+            if extra:
+                message += f"\n... and {extra} more"
 
-            if len(new_pubs) == 1:
-                title = f"New publication by {researcher.name}"
-                message = new_pubs[0].title
-            else:
-                title = f"{len(new_pubs)} new publications by {researcher.name}"
-                message = "\n".join(f"- {t}" for t in titles)
-                if extra:
-                    message += f"\n... and {extra} more"
-
-            notif = Notification(
-                user_id=us.user_id,
-                notification_type="new_publication",
-                title=title,
-                message=message,
-                researcher_id=researcher.id,
-            )
-            self.session.add(notif)
-            count += 1
-
-        return count
+        notif = Notification(
+            notification_type="new_publication",
+            title=title,
+            message=message,
+            researcher_id=researcher.id,
+        )
+        self.session.add(notif)
+        return 1
