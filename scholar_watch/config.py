@@ -2,6 +2,7 @@
 
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -9,10 +10,23 @@ import yaml
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+def _get_project_root() -> Path:
+    """Return the project root, handling both normal and PyInstaller frozen modes.
+
+    Frozen (PyInstaller):  use %LOCALAPPDATA%/ScholarWatch as the data root
+    so the DB, config, and logs persist outside the temp bundle directory.
+
+    Development:  use the repo root (parent of the scholar_watch package).
+    """
+    if getattr(sys, "frozen", False):
+        return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ScholarWatch"
+    return Path(__file__).resolve().parent.parent
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = _get_project_root()
+
+load_dotenv(PROJECT_ROOT / ".env")
 
 
 @dataclass
