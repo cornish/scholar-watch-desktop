@@ -374,8 +374,7 @@ th.sortable:hover {
     cursor: auto;
 }
 
-.cite-hover:hover .cite-popover,
-.cite-hover:focus-within .cite-popover {
+.cite-popover.open {
     display: block;
 }
 

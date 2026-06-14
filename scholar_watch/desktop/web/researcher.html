@@ -209,19 +209,59 @@
             }
         }
 
+        // Popover visibility is managed in JS (not CSS :hover/:focus-within) so that
+        // (a) a short grace delay lets you cross the gap onto the popup, (b) only one is
+        // ever open, and (c) it closes on scroll/outside-click instead of sticking around.
+        let activeCitePop = null;
+        let citeCloseTimer = null;
+        let citeGlobalsBound = false;
+
         function initCitePopovers() {
-            const triggers = document.querySelectorAll(".cite-hover");
-            triggers.forEach(function (trigger) {
-                const show = function () { positionCitePopover(trigger); };
-                trigger.addEventListener("mouseenter", show);
-                trigger.addEventListener("focusin", show);
+            document.querySelectorAll(".cite-hover").forEach(function (trigger) {
+                const pop = trigger.querySelector(".cite-popover");
+                if (!pop) return;
+                trigger.addEventListener("mouseenter", function () { openCitePopover(trigger); });
+                trigger.addEventListener("mouseleave", scheduleCiteClose);
+                trigger.addEventListener("focusin", function () { openCitePopover(trigger); });
+                trigger.addEventListener("focusout", scheduleCiteClose);
+                pop.addEventListener("mouseenter", function () { clearTimeout(citeCloseTimer); });
+                pop.addEventListener("mouseleave", scheduleCiteClose);
             });
+            if (!citeGlobalsBound) {
+                window.addEventListener("scroll", function (e) {
+                    if (e.target === activeCitePop) return;   // scrolling inside the popup is fine
+                    closeCitePopover();                        // any other scroll: position is now stale
+                }, true);
+                window.addEventListener("resize", closeCitePopover);
+                document.addEventListener("click", function (e) {
+                    if (!e.target.closest(".cite-hover")) closeCitePopover();
+                });
+                citeGlobalsBound = true;
+            }
         }
 
-        function positionCitePopover(trigger) {
+        function openCitePopover(trigger) {
+            clearTimeout(citeCloseTimer);
             const pop = trigger.querySelector(".cite-popover");
             if (!pop) return;
-            // Make it measurable without flashing.
+            if (activeCitePop && activeCitePop !== pop) activeCitePop.classList.remove("open");
+            positionCitePopover(trigger, pop);
+            pop.classList.add("open");
+            activeCitePop = pop;
+        }
+
+        function scheduleCiteClose() {
+            clearTimeout(citeCloseTimer);
+            citeCloseTimer = setTimeout(closeCitePopover, 250);  // grace period to reach the popup
+        }
+
+        function closeCitePopover() {
+            clearTimeout(citeCloseTimer);
+            if (activeCitePop) { activeCitePop.classList.remove("open"); activeCitePop = null; }
+        }
+
+        function positionCitePopover(trigger, pop) {
+            // Measure while still hidden (display:none until .open), without flashing.
             pop.style.visibility = "hidden";
             pop.style.display = "block";
             const r = trigger.getBoundingClientRect();
@@ -236,9 +276,9 @@
             if (left + pw > window.innerWidth - margin) {
                 left = window.innerWidth - margin - pw;
             }
-            let top = r.bottom + 6;                   // open below by default
+            let top = r.bottom + 4;                   // open just below
             if (top + ph > window.innerHeight - margin) {
-                const above = r.top - ph - 6;         // flip above if it won't fit
+                const above = r.top - ph - 4;         // flip above if it won't fit
                 top = above >= margin ? above : Math.max(margin, window.innerHeight - margin - ph);
             }
             pop.style.left = left + "px";
