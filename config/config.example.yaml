@@ -9,6 +9,14 @@ scraping:
   # Delay range (seconds) between Scholar API calls
   min_delay: 5
   max_delay: 15
+  # Longer delay range (seconds) before each "Cited by" fetch. These deep-link
+  # listing pages are the requests Google guards most, so they're spaced out more
+  # than ordinary profile fetches to keep CAPTCHAs rare.
+  citing_min_delay: 12
+  citing_max_delay: 30
+  # How long to wait (seconds) for you to solve a CAPTCHA in the surfaced Chrome
+  # window before giving up on that fetch.
+  citing_captcha_solve_timeout: 180
   # Maximum publications to fetch per researcher
   max_publications: 500
   # When a publication gains citations, fetch the newest citing papers so the UI
@@ -19,7 +27,7 @@ scraping:
   max_citing_per_pub: 10
   # Cap on how many papers get a "Cited by" fetch in a single run (0 = unlimited).
   # Prevents a big request burst after a long gap; extra papers defer to later runs.
-  max_citing_pubs_per_run: 30
+  max_citing_pubs_per_run: 20
   # If Scholar refuses this many cited-by fetches in a row, stop fetching for the
   # rest of the run and post a warning notification (throttling protection).
   citing_throttle_threshold: 3

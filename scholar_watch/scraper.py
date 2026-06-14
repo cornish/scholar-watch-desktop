@@ -75,10 +75,13 @@ def _extract_citing_bib(pub: dict) -> dict | None:
 class ScholarScraper:
     """Scrapes Google Scholar profiles and stores snapshot data."""
 
-    def __init__(self, config: AppConfig, session: Session):
+    def __init__(self, config: AppConfig, session: Session, status_callback=None):
         self.config = config
         self.scraping = config.scraping
         self.session = session
+        # Optional one-arg callable(message: str) for surfacing live progress to the
+        # UI (e.g. "solve the CAPTCHA in the Chrome window"). Best-effort; never fatal.
+        self._status_callback = status_callback
         self._reset_citing_state()
         self._setup_proxy()
 
@@ -89,8 +92,12 @@ class ScholarScraper:
         self._consec_citing_failures = 0   # consecutive Scholar refusals (throttle signal)
         self._throttle_detected = False     # once true, we stop fetching for the rest of the run
         self._browser = None                # lazily-started Selenium Chrome (one per run)
-        self._tried_visible_fallback = False  # only flip to a visible window once per run
+        self._tried_captcha_solve = False   # only do the interactive CAPTCHA-solve flow once per run
+        self._captcha_seen = False          # surfaced Chrome for a CAPTCHA at some point this run
         self._browser_setup_needed = False  # true if we skipped because Chrome isn't connected
+        # (pub, citedby_url, delta) for fetches that failed mid-run; retried once at the
+        # end of the run after the user has had a chance to clear a block (see fix below).
+        self._citing_retry_queue = []
         # Effective on/off: DB setting wins, else the config default.
         self._citing_enabled = get_bool(self.session, CITING_ENABLED, self.scraping.fetch_citing_papers)
         self._citing_profile_dir = resolve_profile_dir(self.scraping.citing_browser_profile_dir)
@@ -128,6 +135,25 @@ class ScholarScraper:
         logger.debug("Waiting %.1f seconds before next request", delay)
         time.sleep(delay)
 
+    def _citing_delay(self) -> None:
+        """Longer random delay before a 'Cited by' browser fetch.
+
+        These deep-link listing pages are the requests Google guards most, so we space
+        them out more than ordinary profile fetches to keep CAPTCHAs rare.
+        """
+        delay = random.uniform(self.scraping.citing_min_delay, self.scraping.citing_max_delay)
+        logger.debug("Waiting %.1f seconds before next cited-by fetch", delay)
+        time.sleep(delay)
+
+    def _status(self, message: str) -> None:
+        """Best-effort live progress message to the UI (never raises)."""
+        if not self._status_callback:
+            return
+        try:
+            self._status_callback(message)
+        except Exception as e:
+            logger.debug("Status callback failed: %s", e)
+
     def scrape_all(self) -> ScrapeRun:
         """Scrape all active researchers."""
         self._reset_citing_state()
@@ -160,6 +186,10 @@ class ScholarScraper:
             run.status = "failed"
             run.error_message = str(e)
         finally:
+            try:
+                self._run_citing_retries(run)
+            except Exception as e:
+                logger.warning("Cited-by retry pass failed: %s", e)
             self._close_browser()
             run.completed_at = datetime.utcnow()
             self._emit_citing_warnings(run)
@@ -207,6 +237,10 @@ class ScholarScraper:
             run.status = "failed"
             run.error_message = str(e)
         finally:
+            try:
+                self._run_citing_retries(run)
+            except Exception as e:
+                logger.warning("Cited-by retry pass failed: %s", e)
             self._close_browser()
             run.completed_at = datetime.utcnow()
             self._emit_citing_warnings(run)
@@ -384,10 +418,17 @@ class ScholarScraper:
                 # Per-run budget spent; defer this paper's detail to a future run.
                 self._citing_skipped_cap += 1
                 return
-            self._fetch_citing_papers(pub, pub_data, num_citations - prev_count, run)
+            self._fetch_citing_papers(
+                pub, pub_data.get("citedby_url"), num_citations - prev_count, run
+            )
 
     def _fetch_citing_papers(
-        self, pub: Publication, pub_data: dict, delta: int, run: ScrapeRun
+        self,
+        pub: Publication,
+        citedby_url: str | None,
+        delta: int,
+        run: ScrapeRun,
+        is_retry: bool = False,
     ) -> None:
         """Fetch the newest citing papers for a publication and store the new ones.
 
@@ -396,8 +437,11 @@ class ScholarScraper:
         weekly +1..+10 costs a single extra request. New-indexed order is the best
         available proxy for "the citation that incremented the count"; dedup by
         normalized title keeps it self-correcting across runs.
+
+        On failure (CAPTCHA, soft block, error) the fetch is queued for one retry at the
+        end of the run (unless this *is* the retry), so a block the user clears partway
+        through doesn't leave a paper with a "+N" badge but an empty "who cited this".
         """
-        citedby_url = pub_data.get("citedby_url")
         if not citedby_url:
             return
 
@@ -413,14 +457,16 @@ class ScholarScraper:
 
         limit = min(delta, self.scraping.max_citing_per_pub)
 
-        self._citing_attempts += 1
+        if not is_retry:
+            self._citing_attempts += 1
         try:
-            self._delay()
+            self._citing_delay()
             bibs = self._browser_fetch(url, limit)
             if not bibs:
                 # delta > 0 means the paper *has* recent cites, so an empty page is a
                 # soft block (Google returns a results-less page instead of a CAPTCHA).
                 self._register_citing_failure(pub, "empty results (soft block)")
+                self._queue_citing_retry(pub, citedby_url, delta, is_retry)
                 return
             added = 0
             for bib in bibs:
@@ -456,9 +502,40 @@ class ScholarScraper:
         except Exception as e:
             kind = "CAPTCHA" if isinstance(e, CitingCaptcha) else "error"
             self._register_citing_failure(pub, kind)
+            self._queue_citing_retry(pub, citedby_url, delta, is_retry)
             logger.warning(
                 "Could not fetch citing papers for '%s' (%s): %s", pub.title[:60], kind, e
             )
+
+    def _queue_citing_retry(
+        self, pub: Publication, citedby_url: str, delta: int, is_retry: bool
+    ) -> None:
+        """Remember a failed cited-by fetch so it can be retried once at the end of the run."""
+        if is_retry:
+            return  # already the second attempt; don't loop
+        self._citing_retry_queue.append((pub, citedby_url, delta))
+
+    def _run_citing_retries(self, run: ScrapeRun) -> None:
+        """Second-chance pass for cited-by fetches that failed earlier this run.
+
+        A CAPTCHA early in a run can fail a few fetches before the user solves it; once
+        the session is unblocked the rest of the run succeeds, so we replay the failed
+        fetches a single time, attached to the same run, so their "+N" badges get a
+        populated "who cited this" list instead of an empty popover.
+        """
+        if not self._citing_retry_queue:
+            return
+        queue, self._citing_retry_queue = self._citing_retry_queue, []
+        # The earlier failures may have tripped the throttle stop; the user has since had
+        # a chance to clear the block (e.g. solved a CAPTCHA), so give the retries a
+        # clean slate. If they fail again, the throttle simply re-trips.
+        self._throttle_detected = False
+        self._consec_citing_failures = 0
+        logger.info("Retrying %d cited-by fetch(es) that failed earlier this run", len(queue))
+        for pub, citedby_url, delta in queue:
+            if self._throttle_detected:
+                break
+            self._fetch_citing_papers(pub, citedby_url, delta, run, is_retry=True)
 
     def _register_citing_failure(self, pub: Publication, reason: str) -> None:
         """Count a failed/blocked cited-by fetch; trip the throttle stop at the threshold."""
@@ -472,11 +549,13 @@ class ScholarScraper:
             )
 
     def _browser_fetch(self, url_path: str, limit: int) -> list[dict]:
-        """Fetch via the real-Chrome driver, flipping visible once on a CAPTCHA.
+        """Fetch via the real-Chrome driver, surfacing the window on a CAPTCHA.
 
-        First CAPTCHA in a headless run reopens Chrome *visibly* and waits for the user
-        to solve it; the solved session persists in the profile so the rest of the run
-        sails through. A CAPTCHA we still can't get past propagates to the throttle path.
+        Chrome runs minimized (or headless) to stay out of the way, but a CAPTCHA needs
+        a human — so on the first one this run we make the window visible, bring it to
+        the front, tell the user, and wait for them to solve it. The solved session
+        persists in the profile so the rest of the run sails through. A CAPTCHA we still
+        can't get past propagates to the throttle path.
         """
         if self._browser is None:
             self._browser = BrowserCitingFetcher(
@@ -485,9 +564,19 @@ class ScholarScraper:
         try:
             return self._browser.fetch(url_path, limit)
         except CitingCaptcha:
-            if self._browser.headless and not self._tried_visible_fallback:
-                self._tried_visible_fallback = True
-                logger.warning("CAPTCHA hit — reopening Chrome visibly so you can solve it...")
+            if self._tried_captcha_solve:
+                raise
+            self._tried_captcha_solve = True
+            self._captcha_seen = True
+            logger.warning("CAPTCHA hit — bringing Chrome to the front so you can solve it...")
+            if self._browser.headless:
+                # No window to show in headless mode; relaunch visible first.
                 self._browser.restart(headless=False)
-                return self._browser.fetch(url_path, limit, solve_timeout=180)
-            raise
+            self._browser.surface_window()
+            self._status(
+                "Action needed: a Google Scholar CAPTCHA opened in the Chrome window — "
+                "please solve it so the scrape can continue."
+            )
+            return self._browser.fetch(
+                url_path, limit, solve_timeout=self.scraping.citing_captcha_solve_timeout
+            )

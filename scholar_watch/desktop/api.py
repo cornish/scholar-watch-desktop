@@ -453,8 +453,16 @@ def trigger_scrape(scholar_id=None):
         try:
             from ..scraper import ScholarScraper
             session = _get_session()
+
+            def _status(message):
+                # Push live progress (e.g. a CAPTCHA prompt) to the open page.
+                try:
+                    eel.on_scrape_status({"message": message})
+                except Exception:
+                    pass
+
             try:
-                scraper = ScholarScraper(_config, session)
+                scraper = ScholarScraper(_config, session, status_callback=_status)
                 if scholar_id:
                     run = scraper.scrape_one(scholar_id)
                 else:

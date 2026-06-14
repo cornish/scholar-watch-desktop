@@ -63,6 +63,14 @@ class ProxyConfig:
 class ScrapingConfig:
     min_delay: float = 5.0
     max_delay: float = 15.0
+    # "Cited by" pages are driven through real Chrome and are the requests Google
+    # guards most aggressively, so they get their own, longer delay than the generic
+    # profile fetches above. Spacing these out is the main lever against CAPTCHAs.
+    citing_min_delay: float = 12.0
+    citing_max_delay: float = 30.0
+    # How long (seconds) to wait for the user to solve a CAPTCHA in the surfaced
+    # Chrome window before giving up on that fetch.
+    citing_captcha_solve_timeout: int = 180
     max_publications: int = 500
     # When a publication's citation count rises, fetch the newest citing papers so
     # the UI can show *which* paper is the new cite. Off => only counts are tracked.
@@ -74,7 +82,7 @@ class ScrapingConfig:
     # Protects against a big burst of requests after a long gap between scrapes;
     # papers beyond the cap are deferred to future runs. The biggest worry for users
     # who don't scrape on a regular cadence.
-    max_citing_pubs_per_run: int = 30
+    max_citing_pubs_per_run: int = 20
     # If Scholar refuses this many "Cited by" fetches in a row, assume we're being
     # throttled, stop fetching for the rest of the run, and warn the user.
     citing_throttle_threshold: int = 3

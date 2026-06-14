@@ -166,6 +166,49 @@ class BrowserCitingFetcher:
                 except Exception:
                     pass
 
+    def surface_window(self) -> None:
+        """Restore and bring the window to the foreground.
+
+        The window is normally minimized to stay out of the way, but a CAPTCHA is
+        useless if the user can't see it — so un-minimize and surface it when a
+        robot-check needs a human.
+
+        ``maximize_window()`` alone does NOT reliably restore a *minimized* Chrome
+        window on Windows, so drive it through the DevTools Protocol: set the window
+        state back to "normal" (un-minimize) and then "maximized". Chrome rejects a
+        state change and a bounds change in the same call, so it's done in two steps.
+        """
+        if self.driver is None:
+            return
+        restored = False
+        try:
+            window_id = self.driver.execute_cdp_cmd("Browser.getWindowForTarget", {})["windowId"]
+            self.driver.execute_cdp_cmd(
+                "Browser.setWindowBounds",
+                {"windowId": window_id, "bounds": {"windowState": "normal"}},
+            )
+            self.driver.execute_cdp_cmd(
+                "Browser.setWindowBounds",
+                {"windowId": window_id, "bounds": {"windowState": "maximized"}},
+            )
+            restored = True
+        except Exception as e:
+            logger.warning("CDP window restore failed (%s); falling back to maximize_window", e)
+        if not restored:
+            try:
+                self.driver.maximize_window()
+            except Exception as e:
+                logger.warning("maximize_window fallback also failed: %s", e)
+        # Bring the tab to the front within the window and nudge OS focus.
+        try:
+            self.driver.execute_cdp_cmd("Page.bringToFront", {})
+        except Exception:
+            pass
+        try:
+            self.driver.switch_to.window(self.driver.current_window_handle)
+        except Exception:
+            pass
+
     def stop(self) -> None:
         if self.driver is not None:
             try:

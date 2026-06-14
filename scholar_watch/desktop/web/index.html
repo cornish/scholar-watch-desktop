@@ -129,6 +129,15 @@
             }
         }
 
+        eel.expose(on_scrape_status);
+        function on_scrape_status(payload) {
+            // Live progress during a scrape (e.g. a CAPTCHA needs solving).
+            if (!payload || !payload.message) return;
+            const status = document.getElementById("scrape-status");
+            if (status) status.textContent = payload.message;
+            showAlert(payload.message, "warning");
+        }
+
         eel.expose(on_scrape_complete);
         function on_scrape_complete(result) {
             const btn = document.getElementById("scrape-btn");

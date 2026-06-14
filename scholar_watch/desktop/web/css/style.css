@@ -538,6 +538,12 @@ select, input[type="text"] {
     border: 1px solid #bfdbfe;
 }
 
+.alert-warning {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
 /* Add scholar form */
 .add-scholar-form {
     display: flex;

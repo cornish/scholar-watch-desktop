@@ -5,7 +5,8 @@ import sys
 
 import eel
 
-from ..config import AppConfig
+from ..cli import setup_logging
+from ..config import PROJECT_ROOT, AppConfig
 from ..database import init_db
 
 # Import api module to register @eel.expose functions
@@ -21,6 +22,10 @@ def _web_dir() -> str:
 
 def start_app(config: AppConfig) -> None:
     """Initialize the database, configure Eel, and launch the desktop window."""
+    # Log to <data>/logs/scholar_watch.log so the frozen app leaves a diagnostic trail
+    # (e.g. CAPTCHA handling, cited-by fetch failures). PROJECT_ROOT is the persistent
+    # data dir when frozen, the repo root in dev.
+    setup_logging(log_dir=str(PROJECT_ROOT / "logs"))
     init_db(config)
     api.set_config(config)
 

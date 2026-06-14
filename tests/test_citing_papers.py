@@ -35,6 +35,8 @@ def db_config(tmp_path):
     # Keep tests fast: no real delay between (stubbed) fetches.
     config.scraping.min_delay = 0
     config.scraping.max_delay = 0
+    config.scraping.citing_min_delay = 0
+    config.scraping.citing_max_delay = 0
     init_db(config)
     yield config
     reset_engine()
@@ -293,6 +295,46 @@ def test_empty_results_trip_throttle(db_config):
         session.close()
 
 
+def test_failed_fetch_is_retried_at_end_of_run(db_config):
+    """A cited-by fetch that fails once (e.g. a CAPTCHA) is replayed at the end of the
+    run, so the paper isn't left with a '+N' badge but an empty 'who cited this' list."""
+    session = get_session(db_config)
+    try:
+        r, pub = _make_pub_with_history(session, count=5)
+
+        # Fail the first attempt (as if blocked), succeed on the retry.
+        state = {"first": True}
+
+        def flaky(url, limit):
+            if state["first"]:
+                state["first"] = False
+                raise CitingCaptcha(url)
+            return [_norm("Recovered Cite")][:limit]
+
+        scraper = ScholarScraper(db_config, session)
+        _stub_browser(scraper, flaky)
+        run = ScrapeRun(started_at=datetime.utcnow(), status="running")
+        session.add(run)
+        session.commit()
+
+        pub_data = {"bib": {"title": pub.title}, "num_citations": 6, "citedby_url": "/scholar?cites=1"}
+        scraper._process_publication(r, pub_data, run)
+
+        # First pass failed and nothing stored yet, but it's queued for retry.
+        assert session.query(CitingPaper).count() == 0
+        assert len(scraper._citing_retry_queue) == 1
+
+        # End-of-run retry pass recovers it, attached to the same run.
+        scraper._run_citing_retries(run)
+        session.commit()
+        stored = session.query(CitingPaper).all()
+        assert [c.title for c in stored] == ["Recovered Cite"]
+        assert stored[0].first_seen_run_id == run.id
+        assert scraper._citing_retry_queue == []     # queue drained, no infinite loop
+    finally:
+        session.close()
+
+
 def test_unconnected_browser_skips_and_prompts_setup(db_config, monkeypatch):
     """If Chrome isn't connected, fetching is skipped and a setup notification is posted."""
     monkeypatch.setattr(scraper_module, "profile_is_setup", lambda *_a, **_k: False)
@@ -332,6 +374,9 @@ def test_captcha_flips_browser_visible_then_succeeds(db_config, monkeypatch):
         def restart(self, headless):
             self.headless = headless
 
+        def surface_window(self):
+            pass
+
         def stop(self):
             pass
 
@@ -343,7 +388,7 @@ def test_captcha_flips_browser_visible_then_succeeds(db_config, monkeypatch):
         out = scraper._browser_fetch("/scholar?cites=1&scisbd=1", 5)
         assert [o["title"] for o in out] == ["Solved Cite"]
         assert scraper._browser.headless is False     # flipped to visible
-        assert scraper._tried_visible_fallback is True
+        assert scraper._tried_captcha_solve is True
     finally:
         session.close()
 
