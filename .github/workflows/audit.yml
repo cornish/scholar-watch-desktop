@@ -1,0 +1,41 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Mondays 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Trivy dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Resolve the actual versions that would be installed (requirements use >=
+      # ranges) so Trivy matches advisories against concrete, pinned versions.
+      - name: Resolve installed dependency versions
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip freeze > requirements-lock.txt
+
+      # Fail the run on MODERATE (MEDIUM) severity and above; LOW is reported in logs
+      # but does not fail. Mirrors the "moderate, not just severe" gate.
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: requirements-lock.txt
+          scanners: vuln
+          severity: MEDIUM,HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: false
