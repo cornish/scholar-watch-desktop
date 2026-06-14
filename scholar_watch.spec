@@ -3,22 +3,29 @@
 
 import os
 
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
 root = os.path.abspath(".")
+
+# Selenium drives the user's real Chrome for citing-paper fetches. Bundle it fully so the
+# Selenium Manager binary (which resolves chromedriver at runtime) ships inside the exe.
+selenium_datas, selenium_binaries, selenium_hiddenimports = collect_all("selenium")
 
 a = Analysis(
     ["scholar_watch_app.py"],
     pathex=[root],
-    binaries=[],
+    binaries=selenium_binaries,
     datas=[
         (os.path.join(root, "scholar_watch", "desktop", "web"), os.path.join("scholar_watch", "desktop", "web")),
         (os.path.join(root, "config", "config.example.yaml"), "config"),
-    ],
+    ] + selenium_datas,
     hiddenimports=[
         "scholar_watch.desktop.api",
+        "scholar_watch.browser_fetcher",
         "bottle_websocket",
         "engineio.async_drivers.threading",
-    ],
+    ] + selenium_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

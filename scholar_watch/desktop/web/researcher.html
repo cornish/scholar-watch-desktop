@@ -14,6 +14,7 @@
         <ul class="navbar-nav">
             <li><a href="index.html">My Scholars</a></li>
             <li><a href="compare.html">Compare</a></li>
+            <li><a href="settings.html">Settings</a></li>
             <li>
                 <a href="notifications.html" class="nav-notifications" id="nav-notif-link">
                     &#128276;<span class="notification-badge" id="notif-badge" style="display:none;"></span>
@@ -50,7 +51,9 @@
             const m = data.metrics;
             document.title = r.name + " - Scholar Watch";
 
-            let html = '<h1 class="page-title">' + escapeHtml(r.name) + '</h1>';
+            let html = '<nav class="breadcrumb"><a href="index.html">My Scholars</a>' +
+                '<span class="breadcrumb-sep">&rsaquo;</span><span>' + escapeHtml(r.name) + '</span></nav>';
+            html += '<h1 class="page-title">' + escapeHtml(r.name) + '</h1>';
 
             if (r.affiliation) {
                 html += '<p style="color: var(--gray-500); margin-top: -1rem; margin-bottom: 1rem;">' +
@@ -177,32 +180,10 @@
             }
             html += '</div>';
 
-            // Publications tab
+            // Publications tab — table is rendered (and re-rendered on sort) by renderPubTable()
             html += '<div id="tab-publications" class="tab-panel" data-tab-group="researcher">';
             html += '<div class="card"><h2 class="card-title">All Publications</h2>';
-            html += '<div class="table-wrapper"><table><thead><tr>' +
-                '<th>Title</th><th>Year</th><th>Citations</th><th>Change</th>' +
-                '</tr></thead><tbody>';
-            for (const item of data.publications) {
-                html += '<tr>';
-                html += '<td><a href="publication.html?id=' + item.id + '">' +
-                    escapeHtml(item.title) + '</a></td>';
-                html += '<td>' + (item.year || '-') + '</td>';
-                html += '<td>' + item.citations + '</td>';
-                html += '<td>';
-                if (item.delta != null && item.delta !== 0) {
-                    const cls = item.delta > 0 ? 'delta-up' : 'delta-down';
-                    const arrow = item.delta > 0 ? '&#9650;' : '&#9660;';
-                    html += '<span class="delta-indicator ' + cls + '"><span class="delta-arrow">' +
-                        arrow + '</span>' + Math.abs(item.delta) + '</span>';
-                } else if (item.delta != null) {
-                    html += '<span class="delta-indicator delta-unchanged">&mdash;</span>';
-                } else {
-                    html += '<span class="delta-indicator delta-unchanged">new</span>';
-                }
-                html += '</td></tr>';
-            }
-            html += '</tbody></table></div>';
+            html += '<div id="pub-table-container"></div>';
             if (data.pub_delta_since) {
                 html += '<p class="delta-since-label">Changes since ' + escapeHtml(data.pub_delta_since) + '</p>';
             }
@@ -213,6 +194,10 @@
             // Initialize tabs
             initTabs();
 
+            // Render the sortable publications table (also wires up the citing-paper popovers)
+            pubItems = data.publications || [];
+            renderPubTable();
+
             // Render charts
             if (data.charts) {
                 renderChart("chart-citations", data.charts.citations);
@@ -222,6 +207,163 @@
                 renderChart("chart-top-papers", data.charts.top_papers);
                 renderChart("chart-hboundary", data.charts.h_boundary);
             }
+        }
+
+        function initCitePopovers() {
+            const triggers = document.querySelectorAll(".cite-hover");
+            triggers.forEach(function (trigger) {
+                const show = function () { positionCitePopover(trigger); };
+                trigger.addEventListener("mouseenter", show);
+                trigger.addEventListener("focusin", show);
+            });
+        }
+
+        function positionCitePopover(trigger) {
+            const pop = trigger.querySelector(".cite-popover");
+            if (!pop) return;
+            // Make it measurable without flashing.
+            pop.style.visibility = "hidden";
+            pop.style.display = "block";
+            const r = trigger.getBoundingClientRect();
+            const pw = pop.offsetWidth;
+            const ph = pop.offsetHeight;
+            pop.style.display = "";
+            pop.style.visibility = "";
+
+            const margin = 8;
+            let left = r.right - pw;                 // right-align to the indicator
+            if (left < margin) left = margin;
+            if (left + pw > window.innerWidth - margin) {
+                left = window.innerWidth - margin - pw;
+            }
+            let top = r.bottom + 6;                   // open below by default
+            if (top + ph > window.innerHeight - margin) {
+                const above = r.top - ph - 6;         // flip above if it won't fit
+                top = above >= margin ? above : Math.max(margin, window.innerHeight - margin - ph);
+            }
+            pop.style.left = left + "px";
+            pop.style.top = top + "px";
+        }
+
+        // --- Sortable publications table ---
+        let pubItems = [];
+        let pubSort = { key: "citations", dir: -1 };  // matches the API's default (citations desc)
+
+        function pubSortValue(item, key) {
+            if (key === "title") return (item.title || "").toLowerCase();
+            if (key === "year") return item.year;
+            if (key === "citations") return item.citations;
+            if (key === "change") return item.delta;   // may be null ("new")
+            return null;
+        }
+
+        function sortPubs(key) {
+            if (pubSort.key === key) {
+                pubSort.dir *= -1;                       // same column: flip direction
+            } else {
+                pubSort.key = key;
+                pubSort.dir = (key === "title") ? 1 : -1; // text asc, numbers desc by default
+            }
+            renderPubTable();
+        }
+
+        function renderPubTable() {
+            const cont = document.getElementById("pub-table-container");
+            if (!cont) return;
+            const { key, dir } = pubSort;
+            const items = pubItems.slice().sort(function (a, b) {
+                let va = pubSortValue(a, key), vb = pubSortValue(b, key);
+                const na = (va === null || va === undefined), nb = (vb === null || vb === undefined);
+                if (na && nb) return 0;
+                if (na) return 1;            // blanks/"new" always sort to the bottom
+                if (nb) return -1;
+                if (va < vb) return -1 * dir;
+                if (va > vb) return 1 * dir;
+                return 0;
+            });
+            const caret = function (k) {
+                return pubSort.key === k ? (pubSort.dir === 1 ? " ↑" : " ↓") : "";
+            };
+            let h = '<div class="table-wrapper"><table><thead><tr>' +
+                '<th class="sortable" onclick="sortPubs(\'title\')">Title' + caret("title") + '</th>' +
+                '<th class="sortable" onclick="sortPubs(\'year\')">Year' + caret("year") + '</th>' +
+                '<th class="sortable" onclick="sortPubs(\'citations\')">Citations' + caret("citations") + '</th>' +
+                '<th class="sortable" onclick="sortPubs(\'change\')">Change' + caret("change") + '</th>' +
+                '</tr></thead><tbody>';
+            for (const item of items) {
+                h += '<tr>';
+                h += '<td><a href="publication.html?id=' + item.id + '">' +
+                    escapeHtml(item.title) + '</a></td>';
+                h += '<td>' + (item.year || '-') + '</td>';
+                h += '<td>' + item.citations + '</td>';
+                h += '<td>' + renderChangeCell(item) + '</td></tr>';
+            }
+            h += '</tbody></table></div>';
+            cont.innerHTML = h;
+            initCitePopovers();   // re-bind popovers after each (re-)render
+        }
+
+        function renderChangeCell(item) {
+            // No prior snapshot to compare against yet.
+            if (item.delta == null) {
+                return '<span class="delta-indicator delta-unchanged">new</span>';
+            }
+            if (item.delta === 0) {
+                return '<span class="delta-indicator delta-unchanged">&mdash;</span>';
+            }
+            const cls = item.delta > 0 ? 'delta-up' : 'delta-down';
+            const arrow = item.delta > 0 ? '&#9650;' : '&#9660;';
+            const indicator = '<span class="delta-indicator ' + cls + '"><span class="delta-arrow">' +
+                arrow + '</span>' + Math.abs(item.delta) + '</span>';
+
+            // When the count rose and we know which papers are the new cites, make the
+            // indicator a hover target that reveals them.
+            const citing = item.new_citing || [];
+            if (item.delta > 0 && (citing.length || item.citedby_url)) {
+                return '<span class="cite-hover" tabindex="0">' + indicator +
+                    renderCitePopover(item) + '</span>';
+            }
+            return indicator;
+        }
+
+        function renderCitePopover(item) {
+            const citing = item.new_citing || [];
+            const n = citing.length;
+            let head;
+            if (!n) {
+                head = 'Citations';
+            } else if (item.delta && item.delta > n) {
+                // We only preview the newest few; say so rather than implying n is the total.
+                head = 'Newest ' + n + ' of ' + item.delta + ' new citations';
+            } else {
+                head = 'New citation' + (n > 1 ? 's (' + n + ')' : '');
+            }
+            let html = '<span class="cite-popover" role="tooltip">';
+            html += '<span class="cite-popover-head">' + head + '</span>';
+            for (const c of citing) {
+                html += '<span class="cite-item">';
+                const titleHtml = escapeHtml(c.title || 'Untitled');
+                if (c.url) {
+                    html += '<a class="cite-item-title" href="' + escapeHtml(c.url) +
+                        '" target="_blank" rel="noopener">' + titleHtml + '</a>';
+                } else {
+                    html += '<span class="cite-item-title">' + titleHtml + '</span>';
+                }
+                const meta = [];
+                if (c.authors) meta.push(c.authors);
+                if (c.venue) meta.push(c.venue);
+                if (c.year) meta.push(c.year);
+                if (meta.length) {
+                    html += '<span class="cite-item-meta">' + escapeHtml(meta.join(' · ')) + '</span>';
+                }
+                html += '</span>';
+            }
+            if (item.citedby_url) {
+                html += '<a class="cite-popover-all" href="' + escapeHtml(item.citedby_url) +
+                    '" target="_blank" rel="noopener">See all ' + item.citations +
+                    ' on Google Scholar &rarr;</a>';
+            }
+            return html + '</span>';
         }
 
         function renderNewCites(val) {

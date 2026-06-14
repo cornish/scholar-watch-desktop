@@ -55,11 +55,15 @@ class Publication(Base):
     venue: Mapped[str | None] = mapped_column(String(500))
     authors: Mapped[str | None] = mapped_column(Text)
     url: Mapped[str | None] = mapped_column(String(1000))
+    citedby_url: Mapped[str | None] = mapped_column(String(1000))  # GS "Cited by" page for this paper
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     researcher: Mapped["Researcher"] = relationship(back_populates="publications")
     citation_snapshots: Mapped[list["CitationSnapshot"]] = relationship(
+        back_populates="publication", cascade="all, delete-orphan"
+    )
+    citing_papers: Mapped[list["CitingPaper"]] = relationship(
         back_populates="publication", cascade="all, delete-orphan"
     )
 
@@ -78,6 +82,37 @@ class CitationSnapshot(Base):
 
     publication: Mapped["Publication"] = relationship(back_populates="citation_snapshots")
     scrape_run: Mapped["ScrapeRun"] = relationship(back_populates="citation_snapshots")
+
+
+class CitingPaper(Base):
+    """A paper that cites one of a tracked publication's works.
+
+    Captured (going forward) when a publication's citation count increases, so the
+    UI can show *which* paper is behind the "+N" change indicator. ``first_seen_run_id``
+    records the scrape run that first discovered this cite, which drives the hover list.
+    ``norm_key`` is a normalized title used to dedupe the same cite across scrapes.
+    """
+
+    __tablename__ = "citing_papers"
+    __table_args__ = (
+        UniqueConstraint("publication_id", "norm_key", name="uq_citing_pub_normkey"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    publication_id: Mapped[int] = mapped_column(Integer, ForeignKey("publications.id"), nullable=False, index=True)
+    first_seen_run_id: Mapped[int] = mapped_column(Integer, ForeignKey("scrape_runs.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(1000), nullable=False)
+    authors: Mapped[str | None] = mapped_column(Text)
+    year: Mapped[int | None] = mapped_column(Integer)
+    venue: Mapped[str | None] = mapped_column(String(500))
+    url: Mapped[str | None] = mapped_column(String(1000))
+    norm_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    publication: Mapped["Publication"] = relationship(back_populates="citing_papers")
+
+    def __repr__(self) -> str:
+        return f"<CitingPaper(id={self.id}, title='{self.title[:50]}...')>"
 
 
 class ResearcherSnapshot(Base):
@@ -116,6 +151,22 @@ class ScrapeRun(Base):
 
     def __repr__(self) -> str:
         return f"<ScrapeRun(id={self.id}, status='{self.status}', started_at='{self.started_at}')>"
+
+
+class AppSetting(Base):
+    """Tiny key/value store for user-adjustable app settings.
+
+    Persists choices (e.g. citing-paper fetching on/off, browser-connected state) in
+    the database, since the frozen desktop app has no user-writable config file.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+
+    def __repr__(self) -> str:
+        return f"<AppSetting(key='{self.key}', value='{self.value}')>"
 
 
 class Notification(Base):

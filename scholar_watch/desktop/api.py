@@ -2,8 +2,12 @@
 
 import json
 import logging
+import os
 import re
+import subprocess
+import sys
 import threading
+from datetime import timezone
 
 import eel
 
@@ -13,11 +17,18 @@ from ..metrics import MetricsCalculator
 from .. import charts
 from ..models import (
     CitationSnapshot,
+    CitingPaper,
     Notification,
     Publication,
     Researcher,
     ResearcherSnapshot,
     ScrapeRun,
+)
+from ..settings_store import (
+    BROWSER_CONNECTED,
+    CITING_ENABLED,
+    get_bool,
+    set_setting,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +45,20 @@ def set_config(config: AppConfig) -> None:
 
 def _get_session():
     return get_session(_config)
+
+
+def _fmt_local(dt, fmt):
+    """Format a naive-UTC datetime (as stored) in the user's local timezone."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc).astimezone().strftime(fmt)
+
+
+def _abs_scholar_url(u):
+    """Normalize a stored Scholar URL/path to an absolute, clickable link."""
+    if not u:
+        return None
+    return u if u.startswith("http") else "https://scholar.google.com" + u
 
 
 def _extract_scholar_id(raw: str) -> str:
@@ -80,7 +105,7 @@ def get_researchers():
                     "citations": (latest.total_citations or 0) - (previous.total_citations or 0),
                     "h_index": (latest.h_index or 0) - (previous.h_index or 0),
                     "i10_index": (latest.i10_index or 0) - (previous.i10_index or 0),
-                    "since": previous.recorded_at.strftime("%b %d, %Y"),
+                    "since": _fmt_local(previous.recorded_at, "%b %d, %Y"),
                 }
 
             result.append({
@@ -92,7 +117,7 @@ def get_researchers():
                 "total_citations": latest.total_citations if latest else None,
                 "h_index": latest.h_index if latest else None,
                 "i10_index": latest.i10_index if latest else None,
-                "last_scraped_at": r.last_scraped_at.strftime("%Y-%m-%d %H:%M") if r.last_scraped_at else None,
+                "last_scraped_at": _fmt_local(r.last_scraped_at, "%Y-%m-%d %H:%M"),
                 "deltas": deltas,
             })
 
@@ -153,6 +178,32 @@ def get_researcher_detail(scholar_id):
             delta = None
             if len(recent) >= 2:
                 delta = recent[0].citation_count - recent[1].citation_count
+
+            # Citing papers discovered in the latest scrape run for this publication —
+            # i.e. the papers behind a positive "change" indicator. Drives the hover list.
+            new_citing = []
+            if recent:
+                latest_run_id = recent[0].scrape_run_id
+                citing = (
+                    session.query(CitingPaper)
+                    .filter(
+                        CitingPaper.publication_id == pub.id,
+                        CitingPaper.first_seen_run_id == latest_run_id,
+                    )
+                    .order_by(CitingPaper.first_seen_at)
+                    .all()
+                )
+                new_citing = [
+                    {
+                        "title": c.title,
+                        "authors": c.authors,
+                        "year": c.year,
+                        "venue": c.venue,
+                        "url": c.url,
+                    }
+                    for c in citing
+                ]
+
             pub_data.append({
                 "id": pub.id,
                 "title": pub.title,
@@ -161,6 +212,8 @@ def get_researcher_detail(scholar_id):
                 "authors": pub.authors,
                 "citations": current,
                 "delta": delta,
+                "new_citing": new_citing,
+                "citedby_url": _abs_scholar_url(pub.citedby_url),
             })
         pub_data.sort(key=lambda x: x["citations"], reverse=True)
 
@@ -180,7 +233,7 @@ def get_researcher_detail(scholar_id):
             .limit(2)
             .all()
         )
-        pub_delta_since = scrape_runs[1].completed_at.strftime("%b %d, %Y") if len(scrape_runs) >= 2 else None
+        pub_delta_since = _fmt_local(scrape_runs[1].completed_at, "%b %d, %Y") if len(scrape_runs) >= 2 else None
 
         metrics_dict = None
         if metrics:
@@ -231,7 +284,7 @@ def get_researcher_detail(scholar_id):
                 "scholar_id": researcher.scholar_id,
                 "name": researcher.name,
                 "affiliation": researcher.affiliation or "",
-                "last_scraped_at": researcher.last_scraped_at.strftime("%Y-%m-%d %H:%M") if researcher.last_scraped_at else None,
+                "last_scraped_at": _fmt_local(researcher.last_scraped_at, "%Y-%m-%d %H:%M"),
             },
             "metrics": metrics_dict,
             "charts": chart_json,
@@ -273,6 +326,7 @@ def get_publication_detail(pub_id):
                 "venue": pub.venue,
                 "authors": pub.authors,
                 "url": pub.url,
+                "citedby_url": _abs_scholar_url(pub.citedby_url),
             },
             "researcher": {
                 "scholar_id": researcher.scholar_id,
@@ -281,7 +335,7 @@ def get_publication_detail(pub_id):
             "chart": json.loads(fig.to_json()),
             "snapshots": [
                 {
-                    "date": s.recorded_at.strftime("%Y-%m-%d %H:%M"),
+                    "date": _fmt_local(s.recorded_at, "%Y-%m-%d %H:%M"),
                     "citation_count": s.citation_count,
                 }
                 for s in snapshots
@@ -453,7 +507,7 @@ def get_notifications():
                 "title": n.title,
                 "message": n.message,
                 "is_read": n.is_read,
-                "created_at": n.created_at.strftime("%b %d, %H:%M"),
+                "created_at": _fmt_local(n.created_at, "%b %d, %H:%M"),
                 "researcher_id": n.researcher_id,
             }
             for n in notifs
@@ -517,5 +571,87 @@ def get_unread_count():
             Notification.is_read.is_(False)
         ).count()
         return count
+    finally:
+        session.close()
+
+
+def _find_chrome():
+    """Locate the installed Chrome executable, or None."""
+    import shutil
+    candidates = []
+    if sys.platform == "win32":
+        for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"),
+                     os.environ.get("LOCALAPPDATA")):
+            if base:
+                candidates.append(os.path.join(base, "Google", "Chrome", "Application", "chrome.exe"))
+    elif sys.platform == "darwin":
+        candidates.append("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+    return shutil.which("google-chrome") or shutil.which("chrome") or shutil.which("chromium")
+
+
+@eel.expose
+def setup_browser_session():
+    """Open the dedicated Chrome profile at Google Scholar for a one-time sign-in.
+
+    Citing-paper details are fetched by driving real Chrome; signing into Google in
+    this profile once is what lets those requests through Google's bot checks.
+    """
+    from ..browser_fetcher import resolve_profile_dir
+
+    chrome = _find_chrome()
+    if not chrome:
+        return {"error": "Couldn't find Google Chrome. Please install Chrome and try again."}
+
+    profile = resolve_profile_dir(_config.scraping.citing_browser_profile_dir)
+    os.makedirs(profile, exist_ok=True)
+    try:
+        subprocess.Popen([
+            chrome,
+            f"--user-data-dir={profile}",
+            "--profile-directory=Default",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "https://scholar.google.com",
+        ])
+    except Exception as e:
+        logger.exception("Failed to launch Chrome for setup")
+        return {"error": f"Couldn't launch Chrome: {e}"}
+
+    session = _get_session()
+    try:
+        set_setting(session, BROWSER_CONNECTED, "1")
+    finally:
+        session.close()
+    return {
+        "success": True,
+        "message": "Chrome opened. Sign into Google there (so Scholar trusts it), "
+                   "then close that window. Citation details will work on the next scrape.",
+    }
+
+
+@eel.expose
+def get_citing_settings():
+    """Return citing-paper feature state for the settings UI."""
+    from ..browser_fetcher import resolve_profile_dir, profile_is_setup
+
+    session = _get_session()
+    try:
+        enabled = get_bool(session, CITING_ENABLED, _config.scraping.fetch_citing_papers)
+        profile = resolve_profile_dir(_config.scraping.citing_browser_profile_dir)
+        return {"enabled": enabled, "browser_connected": profile_is_setup(profile)}
+    finally:
+        session.close()
+
+
+@eel.expose
+def set_citing_settings(enabled):
+    """Enable/disable citing-paper fetching (persisted in the DB)."""
+    session = _get_session()
+    try:
+        set_setting(session, CITING_ENABLED, "1" if enabled else "0")
+        return {"success": True}
     finally:
         session.close()

@@ -14,6 +14,7 @@
         <ul class="navbar-nav">
             <li><a href="index.html">My Scholars</a></li>
             <li><a href="compare.html">Compare</a></li>
+            <li><a href="settings.html">Settings</a></li>
             <li>
                 <a href="notifications.html" class="nav-notifications" id="nav-notif-link">
                     &#128276;<span class="notification-badge" id="notif-badge" style="display:none;"></span>
@@ -46,7 +47,16 @@
             const pub = data.publication;
             document.title = pub.title + " - Scholar Watch";
 
-            let html = '<h1 class="page-title">' + escapeHtml(pub.title) + '</h1>';
+            let html = '';
+            if (data.researcher) {
+                const crumbTitle = pub.title.length > 55 ? pub.title.slice(0, 55) + '…' : pub.title;
+                html += '<nav class="breadcrumb"><a href="index.html">My Scholars</a>' +
+                    '<span class="breadcrumb-sep">&rsaquo;</span>' +
+                    '<a href="researcher.html?id=' + encodeURIComponent(data.researcher.scholar_id) + '">' +
+                    escapeHtml(data.researcher.name) + '</a>' +
+                    '<span class="breadcrumb-sep">&rsaquo;</span><span>' + escapeHtml(crumbTitle) + '</span></nav>';
+            }
+            html += '<h1 class="page-title">' + escapeHtml(pub.title) + '</h1>';
 
             html += '<p style="color: var(--gray-500); margin-top: -1rem; margin-bottom: 1rem;">';
             if (data.researcher) {
@@ -60,6 +70,18 @@
             if (pub.authors) {
                 html += '<p style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--gray-700);">' +
                     escapeHtml(pub.authors) + '</p>';
+            }
+
+            const links = [];
+            if (pub.citedby_url) {
+                links.push('<a href="' + escapeHtml(pub.citedby_url) + '" target="_blank" rel="noopener">' +
+                    'View &ldquo;Cited by&rdquo; on Google Scholar &rarr;</a>');
+            }
+            if (pub.url) {
+                links.push('<a href="' + escapeHtml(pub.url) + '" target="_blank" rel="noopener">Open paper &rarr;</a>');
+            }
+            if (links.length) {
+                html += '<p style="margin-bottom: 1.25rem;">' + links.join(' &nbsp;&middot;&nbsp; ') + '</p>';
             }
 
             html += '<div class="card chart-container"><div id="chart-pub"></div></div>';

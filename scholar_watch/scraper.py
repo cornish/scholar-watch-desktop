@@ -3,23 +3,73 @@
 import json
 import logging
 import random
+import re
 import time
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from scholarly import scholarly, ProxyGenerator
 from sqlalchemy.orm import Session
 
+from .browser_fetcher import (
+    BrowserCitingFetcher,
+    CitingCaptcha,
+    profile_is_setup,
+    resolve_profile_dir,
+)
 from .config import AppConfig, ScrapingConfig
 from .models import (
     CitationSnapshot,
+    CitingPaper,
+    Notification,
     Publication,
     Researcher,
     ResearcherSnapshot,
     ScrapeRun,
 )
 from .notifications import NotificationGenerator
+from .settings_store import CITING_ENABLED, get_bool
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_title(title: str) -> str:
+    """Normalize a title into a dedup key: lowercase, collapse whitespace, strip."""
+    return re.sub(r"\s+", " ", (title or "").strip().lower())
+
+
+def _extract_citing_bib(pub: dict) -> dict | None:
+    """Pull display fields out of a scholarly search-result publication.
+
+    Returns a dict with title/authors/year/venue/url, or None if there's no title.
+    Scholar results vary, so every field is read defensively.
+    """
+    bib = pub.get("bib", {}) or {}
+    title = (bib.get("title") or "").strip()
+    if not title:
+        return None
+
+    author = bib.get("author")
+    if isinstance(author, list):
+        authors = ", ".join(a for a in author if a)
+    else:
+        authors = (author or "").strip()
+
+    year = bib.get("pub_year") or bib.get("year")
+    try:
+        year = int(year) if year else None
+    except (TypeError, ValueError):
+        year = None
+
+    venue = (bib.get("venue") or bib.get("journal") or bib.get("conference") or "").strip()
+
+    return {
+        "title": title,
+        "authors": authors or None,
+        "year": year,
+        "venue": venue or None,
+        "url": (pub.get("pub_url") or "").strip() or None,
+    }
 
 
 class ScholarScraper:
@@ -29,7 +79,26 @@ class ScholarScraper:
         self.config = config
         self.scraping = config.scraping
         self.session = session
+        self._reset_citing_state()
         self._setup_proxy()
+
+    def _reset_citing_state(self) -> None:
+        """Per-run bookkeeping for the 'who cited this' fetches."""
+        self._citing_attempts = 0          # papers we made a Cited-by request for
+        self._citing_skipped_cap = 0       # papers deferred because the per-run cap was hit
+        self._consec_citing_failures = 0   # consecutive Scholar refusals (throttle signal)
+        self._throttle_detected = False     # once true, we stop fetching for the rest of the run
+        self._browser = None                # lazily-started Selenium Chrome (one per run)
+        self._tried_visible_fallback = False  # only flip to a visible window once per run
+        self._browser_setup_needed = False  # true if we skipped because Chrome isn't connected
+        # Effective on/off: DB setting wins, else the config default.
+        self._citing_enabled = get_bool(self.session, CITING_ENABLED, self.scraping.fetch_citing_papers)
+        self._citing_profile_dir = resolve_profile_dir(self.scraping.citing_browser_profile_dir)
+
+    def _close_browser(self) -> None:
+        if self._browser is not None:
+            self._browser.stop()
+            self._browser = None
 
     def _setup_proxy(self) -> None:
         """Configure scholarly proxy if specified."""
@@ -61,6 +130,7 @@ class ScholarScraper:
 
     def scrape_all(self) -> ScrapeRun:
         """Scrape all active researchers."""
+        self._reset_citing_state()
         run = ScrapeRun(started_at=datetime.utcnow(), status="running")
         self.session.add(run)
         self.session.commit()
@@ -90,7 +160,9 @@ class ScholarScraper:
             run.status = "failed"
             run.error_message = str(e)
         finally:
+            self._close_browser()
             run.completed_at = datetime.utcnow()
+            self._emit_citing_warnings(run)
             self.session.commit()
 
         logger.info(
@@ -108,6 +180,7 @@ class ScholarScraper:
 
     def scrape_one(self, scholar_id: str) -> ScrapeRun:
         """Scrape a single researcher by Scholar ID."""
+        self._reset_citing_state()
         run = ScrapeRun(started_at=datetime.utcnow(), status="running")
         self.session.add(run)
         self.session.commit()
@@ -134,10 +207,53 @@ class ScholarScraper:
             run.status = "failed"
             run.error_message = str(e)
         finally:
+            self._close_browser()
             run.completed_at = datetime.utcnow()
+            self._emit_citing_warnings(run)
             self.session.commit()
 
         return run
+
+    def _emit_citing_warnings(self, run: ScrapeRun) -> None:
+        """Surface a notification if citing-paper fetches were throttled or deferred.
+
+        Uses the app's existing Notification panel so users who don't scrape on a
+        regular cadence find out *why* some "who cited this" details are missing.
+        """
+        try:
+            if self._browser_setup_needed:
+                self.session.add(Notification(
+                    notification_type="citing_setup",
+                    title="Connect Chrome to see who cited your papers",
+                    message=(
+                        "Some papers gained citations, but the 'who cited this' details "
+                        "need a one-time Chrome sign-in. Open the home page and click "
+                        "\"Connect browser\", sign into Google, then close that window."
+                    ),
+                ))
+            elif self._throttle_detected:
+                self.session.add(Notification(
+                    notification_type="citing_throttled",
+                    title="Google Scholar limited our requests",
+                    message=(
+                        "Scholar started refusing requests, so 'who cited this' details "
+                        "were skipped for the rest of this run to avoid being blocked. "
+                        "Citation counts are still up to date; the missing details fill "
+                        "in automatically over your next few runs."
+                    ),
+                ))
+            elif self._citing_skipped_cap > 0:
+                self.session.add(Notification(
+                    notification_type="citing_deferred",
+                    title=f"Citing-paper details deferred for {self._citing_skipped_cap} paper(s)",
+                    message=(
+                        f"To stay light on Google Scholar, 'who cited this' details for "
+                        f"{self._citing_skipped_cap} paper(s) were deferred to a future run. "
+                        "This is normal after a long gap between scrapes."
+                    ),
+                ))
+        except Exception as e:
+            logger.warning("Could not record citing-paper notification: %s", e)
 
     def _scrape_researcher(self, researcher: Researcher, run: ScrapeRun) -> None:
         """Scrape a single researcher's profile and publications."""
@@ -205,6 +321,8 @@ class ScholarScraper:
         )
 
         now = datetime.utcnow()
+        citedby_url = pub_data.get("citedby_url") or None
+        prev_count: int | None = None
         if pub is None:
             pub = Publication(
                 researcher_id=researcher.id,
@@ -213,6 +331,7 @@ class ScholarScraper:
                 venue=bib.get("venue", "") or bib.get("journal", "") or bib.get("conference", ""),
                 authors=bib.get("author", ""),
                 url=pub_data.get("pub_url", ""),
+                citedby_url=citedby_url,
                 first_seen_at=now,
                 last_seen_at=now,
             )
@@ -220,11 +339,21 @@ class ScholarScraper:
             self.session.flush()  # Get the ID
         else:
             pub.last_seen_at = now
+            if citedby_url:
+                pub.citedby_url = citedby_url  # keep the "Cited by" link fresh
             # Update metadata if it was missing
             if not pub.year:
                 pub.year = bib.get("pub_year") or bib.get("year")
             if not pub.venue:
                 pub.venue = bib.get("venue", "") or bib.get("journal", "") or bib.get("conference", "")
+            # Most recent prior citation count (used to decide if new cites appeared)
+            prev = (
+                self.session.query(CitationSnapshot)
+                .filter(CitationSnapshot.publication_id == pub.id)
+                .order_by(CitationSnapshot.recorded_at.desc())
+                .first()
+            )
+            prev_count = prev.citation_count if prev else None
 
         # Create citation snapshot
         num_citations = pub_data.get("num_citations", 0) or 0
@@ -235,3 +364,130 @@ class ScholarScraper:
             recorded_at=now,
         )
         self.session.add(snapshot)
+
+        # If the count rose, capture *which* papers are the new cites (going forward only:
+        # we skip brand-new publications, which have no prior baseline to diff against).
+        if (
+            self._citing_enabled
+            and prev_count is not None
+            and num_citations > prev_count
+        ):
+            if self._throttle_detected:
+                # Scholar is refusing us; don't keep hammering for the rest of the run.
+                return
+            if not profile_is_setup(self._citing_profile_dir):
+                # Chrome hasn't been connected yet — can't fetch; prompt setup once.
+                self._browser_setup_needed = True
+                return
+            cap = self.scraping.max_citing_pubs_per_run
+            if cap and self._citing_attempts >= cap:
+                # Per-run budget spent; defer this paper's detail to a future run.
+                self._citing_skipped_cap += 1
+                return
+            self._fetch_citing_papers(pub, pub_data, num_citations - prev_count, run)
+
+    def _fetch_citing_papers(
+        self, pub: Publication, pub_data: dict, delta: int, run: ScrapeRun
+    ) -> None:
+        """Fetch the newest citing papers for a publication and store the new ones.
+
+        Frugal by design: we sort Google Scholar's "Cited by" list newest-first
+        (``scisbd=1``) and take only the top ``delta`` results (capped), so a typical
+        weekly +1..+10 costs a single extra request. New-indexed order is the best
+        available proxy for "the citation that incremented the count"; dedup by
+        normalized title keeps it self-correcting across runs.
+        """
+        citedby_url = pub_data.get("citedby_url")
+        if not citedby_url:
+            return
+
+        # scholarly's iterator prepends the host, so it needs a *path* (not a full URL).
+        # Profile "Cited by" links sometimes come back absolute, which would otherwise
+        # produce a doubled host (scholar.google.com + https://scholar.google.com/...).
+        parts = urlsplit(citedby_url)
+        path = parts.path
+        if not path:
+            return
+        url = f"{path}?{parts.query}" if parts.query else path
+        url += ("&" if "?" in url else "?") + "scisbd=1"  # sort cited-by by date, newest first
+
+        limit = min(delta, self.scraping.max_citing_per_pub)
+
+        self._citing_attempts += 1
+        try:
+            self._delay()
+            bibs = self._browser_fetch(url, limit)
+            if not bibs:
+                # delta > 0 means the paper *has* recent cites, so an empty page is a
+                # soft block (Google returns a results-less page instead of a CAPTCHA).
+                self._register_citing_failure(pub, "empty results (soft block)")
+                return
+            added = 0
+            for bib in bibs:
+                norm_key = _normalize_title(bib["title"])
+                exists = (
+                    self.session.query(CitingPaper.id)
+                    .filter(
+                        CitingPaper.publication_id == pub.id,
+                        CitingPaper.norm_key == norm_key,
+                    )
+                    .first()
+                )
+                if exists:
+                    continue
+                self.session.add(
+                    CitingPaper(
+                        publication_id=pub.id,
+                        first_seen_run_id=run.id,
+                        title=bib["title"][:1000],
+                        authors=bib["authors"],
+                        year=bib["year"],
+                        venue=(bib["venue"][:500] if bib["venue"] else None),
+                        url=(bib["url"][:1000] if bib["url"] else None),
+                        norm_key=norm_key[:255],
+                    )
+                )
+                added += 1
+            self._consec_citing_failures = 0  # a clean fetch clears the throttle streak
+            logger.info(
+                "    citing papers: +%d cite(s) on '%s', stored %d new",
+                delta, pub.title[:60], added,
+            )
+        except Exception as e:
+            kind = "CAPTCHA" if isinstance(e, CitingCaptcha) else "error"
+            self._register_citing_failure(pub, kind)
+            logger.warning(
+                "Could not fetch citing papers for '%s' (%s): %s", pub.title[:60], kind, e
+            )
+
+    def _register_citing_failure(self, pub: Publication, reason: str) -> None:
+        """Count a failed/blocked cited-by fetch; trip the throttle stop at the threshold."""
+        self._consec_citing_failures += 1
+        if self._consec_citing_failures >= self.scraping.citing_throttle_threshold:
+            self._throttle_detected = True
+            logger.warning(
+                "Google Scholar appears to be blocking us (%d cited-by fetches failed in a "
+                "row, last: %s); skipping citing-paper fetches for the rest of this run.",
+                self._consec_citing_failures, reason,
+            )
+
+    def _browser_fetch(self, url_path: str, limit: int) -> list[dict]:
+        """Fetch via the real-Chrome driver, flipping visible once on a CAPTCHA.
+
+        First CAPTCHA in a headless run reopens Chrome *visibly* and waits for the user
+        to solve it; the solved session persists in the profile so the rest of the run
+        sails through. A CAPTCHA we still can't get past propagates to the throttle path.
+        """
+        if self._browser is None:
+            self._browser = BrowserCitingFetcher(
+                self._citing_profile_dir, headless=self.scraping.citing_browser_headless
+            )
+        try:
+            return self._browser.fetch(url_path, limit)
+        except CitingCaptcha:
+            if self._browser.headless and not self._tried_visible_fallback:
+                self._tried_visible_fallback = True
+                logger.warning("CAPTCHA hit — reopening Chrome visibly so you can solve it...")
+                self._browser.restart(headless=False)
+                return self._browser.fetch(url_path, limit, solve_timeout=180)
+            raise

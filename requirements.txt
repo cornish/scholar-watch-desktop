@@ -6,3 +6,5 @@ kaleido>=0.2
 PyYAML>=6.0
 python-dotenv>=1.0
 alembic>=1.12
+selenium>=4.20
+beautifulsoup4>=4.12

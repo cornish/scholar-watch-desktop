@@ -64,6 +64,26 @@ class ScrapingConfig:
     min_delay: float = 5.0
     max_delay: float = 15.0
     max_publications: int = 500
+    # When a publication's citation count rises, fetch the newest citing papers so
+    # the UI can show *which* paper is the new cite. Off => only counts are tracked.
+    fetch_citing_papers: bool = True
+    # Hard cap on how many newest citing papers to pull per changed paper per run,
+    # bounding extra Google Scholar requests even when a paper jumps a lot at once.
+    max_citing_per_pub: int = 10
+    # Cap on how many *papers* get a "Cited by" fetch in a single run (0 = unlimited).
+    # Protects against a big burst of requests after a long gap between scrapes;
+    # papers beyond the cap are deferred to future runs. The biggest worry for users
+    # who don't scrape on a regular cadence.
+    max_citing_pubs_per_run: int = 30
+    # If Scholar refuses this many "Cited by" fetches in a row, assume we're being
+    # throttled, stop fetching for the rest of the run, and warn the user.
+    citing_throttle_threshold: int = 3
+    # Citing papers are fetched by driving the user's real Chrome (Selenium), since
+    # Google blocks scripted access. Headless Chrome ALSO gets CAPTCHA'd, so we run a
+    # real (minimized) Chrome window by default. Set true only to experiment.
+    citing_browser_headless: bool = False
+    # Optional override for the dedicated Chrome profile dir (default: <data>/chrome_profile).
+    citing_browser_profile_dir: str = ""
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
 
 
